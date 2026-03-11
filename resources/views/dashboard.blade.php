@@ -53,7 +53,7 @@
                     </div>
                 </div>
             </div>
-                            @role('admin')
+                            @hasanyrole('admin|analista')
             {{-- Top lists --}}
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6">
@@ -117,7 +117,7 @@
                 </div>
                 
             </div>
-@endrole
+@endhasanyrole
             {{-- Recientes --}}
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6">

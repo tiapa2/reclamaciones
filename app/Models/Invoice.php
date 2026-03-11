@@ -14,6 +14,7 @@ class Invoice extends Model
         'ncf_number',
         'ncf_seq',
         'total_amount',
+        'invoice_type',
         'status',
         'created_by',
         'paid_amount',

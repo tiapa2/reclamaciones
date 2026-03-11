@@ -24,7 +24,7 @@
                     </ul>
                 </div>
             @endif
-            @role('admin')
+            @hasanyrole('admin|analista')
             {{-- FORM --}}
             <div class="bg-white dark:bg-gray-800 shadow-sm sm:rounded-lg p-6">
                 <form method="POST" action="{{ route('invoices.store') }}">
@@ -32,6 +32,7 @@
 
                     <input type="hidden" name="doctor_id" :value="form.doctor_id">
                     <input type="hidden" name="ncf_type_id" :value="form.ncf_type_id">
+                    <input type="hidden" name="invoice_type" :value="form.invoice_type">
 
                     <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
                         <div>
@@ -85,8 +86,21 @@
                         </div>
                     </div>
 
+                    {{-- TIPO DE FACTURA --}}
+                    <div class="mt-5 flex items-center gap-6">
+                        <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Tipo de factura:</span>
+                        <label class="inline-flex items-center gap-2 cursor-pointer">
+                            <input type="radio" x-model="form.invoice_type" value="ars" class="accent-indigo-600">
+                            <span class="text-sm text-gray-800 dark:text-gray-200">ARS (Seguro)</span>
+                        </label>
+                        <label class="inline-flex items-center gap-2 cursor-pointer">
+                            <input type="radio" x-model="form.invoice_type" value="clinica" class="accent-indigo-600">
+                            <span class="text-sm text-gray-800 dark:text-gray-200">Clínica</span>
+                        </label>
+                    </div>
+
                     {{-- ITEMS --}}
-                    <div class="mt-6">
+                    <div class="mt-4">
                         <div class="flex items-center justify-between mb-2">
                             <div class="text-sm font-semibold text-gray-900 dark:text-gray-100">Servicios</div>
                             <button type="button" @click="addRow()"
@@ -100,9 +114,10 @@
                                 <thead class="text-gray-600 dark:text-gray-300">
                                     <tr class="border-b border-gray-200 dark:border-gray-700">
                                         <th class="py-2 text-left">Fecha</th>
-                                        <th class="py-2 text-left">Paciente</th>
-                                        <th class="py-2 text-left">Afiliado</th>
-                                        <th class="py-2 text-left">Autorización</th>
+                                        <th class="py-2 text-left" x-show="form.invoice_type === 'ars'">Paciente</th>
+                                        <th class="py-2 text-left" x-show="form.invoice_type === 'ars'">Afiliado</th>
+                                        <th class="py-2 text-left" x-show="form.invoice_type === 'ars'">Autorización</th>
+                                        <th class="py-2 text-left" x-show="form.invoice_type === 'clinica'">Descripción</th>
                                         <th class="py-2 text-left">Monto</th>
                                         <th class="py-2 text-right">Acción</th>
                                     </tr>
@@ -117,25 +132,34 @@
                                                     class="w-full rounded-lg border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100">
                                             </td>
 
-                                            <td class="py-2">
+                                            {{-- ARS fields --}}
+                                            <td class="py-2" x-show="form.invoice_type === 'ars'">
                                                 <input type="text" :name="`items[${idx}][patient_name]`"
                                                     x-model="row.patient_name"
                                                     class="w-full rounded-lg border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
                                                     placeholder="Nombre del paciente">
                                             </td>
 
-                                            <td class="py-2">
+                                            <td class="py-2" x-show="form.invoice_type === 'ars'">
                                                 <input type="text" :name="`items[${idx}][affiliate_no]`"
                                                     x-model="row.affiliate_no"
                                                     class="w-full rounded-lg border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
                                                     placeholder="No. Afiliado">
                                             </td>
 
-                                            <td class="py-2">
+                                            <td class="py-2" x-show="form.invoice_type === 'ars'">
                                                 <input type="text" :name="`items[${idx}][authorization_no]`"
                                                     x-model="row.authorization_no"
                                                     class="w-full rounded-lg border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
                                                     placeholder="No. Autorización">
+                                            </td>
+
+                                            {{-- Clínica field --}}
+                                            <td class="py-2" x-show="form.invoice_type === 'clinica'">
+                                                <input type="text" :name="`items[${idx}][description]`"
+                                                    x-model="row.description"
+                                                    class="w-full rounded-lg border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                                                    placeholder="Descripción del servicio">
                                             </td>
 
                                             <td class="py-2">
@@ -172,7 +196,7 @@
                     </div>
                 </form>
             </div>
-            @endrole
+            @endhasanyrole
             {{-- LISTADO --}}
             <div class="mt-6 bg-white dark:bg-gray-800 shadow-sm sm:rounded-lg p-6">
                 <div class="flex items-center justify-between gap-3">
@@ -222,7 +246,7 @@
                                             Ver
                                         </a>
 
-                                        @role('admin')
+                                        @hasanyrole('admin|analista')
                                         @if ($inv->status !== 'void')
                                             <form method="POST" action="{{ route('invoices.void', $inv) }}"
                                                 class="inline" onsubmit="return confirm('¿Anular esta factura?');">
@@ -234,7 +258,7 @@
                                                 </button>
                                             </form>
                                         @endif
-                                        @endrole
+                                        @endhasanyrole
                                     </td>
                                 </tr>
                             @endforeach
@@ -265,8 +289,10 @@
                     insurer_id: '',
                     ncf_type_id: '',
                     invoice_date: new Date().toISOString().slice(0, 10),
+                    invoice_type: 'ars',
                     items: [{
                         service_date: '',
+                        description: '',
                         patient_name: '',
                         affiliate_no: '',
                         authorization_no: '',
@@ -318,6 +344,7 @@
                 addRow() {
                     this.form.items.push({
                         service_date: '',
+                        description: '',
                         patient_name: '',
                         affiliate_no: '',
                         authorization_no: '',

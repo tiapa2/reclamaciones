@@ -10,6 +10,6 @@ trait DoctorScope
         if ($u && $u->hasRole('doctor')) {
             return optional($u->doctor)->id;
         }
-        return null; // admin ve todo
+        return null; // admin y analista ven todo
     }
 }

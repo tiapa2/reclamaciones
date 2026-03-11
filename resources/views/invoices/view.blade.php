@@ -8,7 +8,7 @@
                     $invoice->loadMissing('factoring');
                 @endphp
 
-                @role('admin')
+                @hasanyrole('admin|analista')
                     @if ($invoice->status !== 'void')
                         @if ($invoice->factoring)
                             <a href="{{ route('factorings.show', $invoice->factoring) }}"
@@ -23,7 +23,7 @@
                         @endif
                     @endif
 
-                @endrole
+                @endhasanyrole
 
                 <a href="{{ route('invoices.pdf', $invoice) }}"
                 target="_blank"
@@ -46,6 +46,7 @@
                 fn($it) => [
                     'id' => $it->id,
                     'service_date' => optional($it->service_date)->toDateString(),
+                    'description' => $it->description,
                     'patient_name' => $it->patient_name,
                     'affiliate_no' => $it->affiliate_no,
                     'authorization_no' => $it->authorization_no,
@@ -61,11 +62,13 @@
 
     <div class="py-8" x-data="invoiceViewPage({
         invoiceId: {{ $invoice->id }},
+        invoiceType: @js($invoice->invoice_type ?? 'ars'),
         items: @js($itemsForJs),
         insurerName: @js($invoice->insurer?->name ?? ''),
         totalAmount: {{ (float) $invoice->total_amount }},
         routes: {
-            updateItemBase: @js(url('/invoice-items')), // /invoice-items/{id}
+            updateItemBase: @js(url('/invoice-items')),
+            storeItem: @js(route('invoice-items.store', $invoice)),
         }
     })">
 
@@ -129,19 +132,30 @@
                 </div>
 
                 {{-- Tabla items --}}
-                <div class="mt-6 overflow-x-auto">
+                @hasanyrole('admin|analista')
+                <div class="mt-6 flex justify-end">
+                    <button type="button"
+                        class="rounded-lg bg-indigo-600 px-3 py-2 text-white text-sm font-medium hover:bg-indigo-700"
+                        @click="showAddForm = !showAddForm">
+                        <span x-show="!showAddForm">+ Agregar línea</span>
+                        <span x-show="showAddForm">— Cancelar</span>
+                    </button>
+                </div>
+                @endhasanyrole
+
+                <div class="mt-2 overflow-x-auto">
                     <table class="min-w-full text-sm">
                         <thead>
                             <tr class="bg-green-200 text-gray-800">
-                                
-                                <th class="px-4 py-3 text-left">AUTORIZACIÓN</th>
-                                <th class="px-4 py-3 text-left">PACIENTE</th>
+                                <th class="px-4 py-3 text-left" x-show="invoiceType === 'ars'">AUTORIZACIÓN</th>
+                                <th class="px-4 py-3 text-left" x-show="invoiceType === 'ars'">PACIENTE</th>
                                 <th class="px-4 py-3 text-left">FECHA</th>
-                                <th class="px-4 py-3 text-left">AFILIADO</th>
+                                <th class="px-4 py-3 text-left" x-show="invoiceType === 'ars'">AFILIADO</th>
+                                <th class="px-4 py-3 text-left" x-show="invoiceType === 'clinica'">DESCRIPCIÓN</th>
                                 <th class="px-4 py-3 text-right">COBERTURA</th>
-                                @role('admin')
+                                @hasanyrole('admin|analista')
                                     <th class="px-4 py-3 text-right">ACCIONES</th>
-                                @endrole
+                                @endhasanyrole
                             </tr>
                         </thead>
 
@@ -157,8 +171,8 @@
                             <template x-for="(it, idx) in items" :key="it.id">
                                 <tr class="border-b border-gray-200 dark:border-gray-700 align-top">
 
-                                    {{-- Autorización --}}
-                                    <td class="px-4 py-3">
+                                    {{-- Autorización (solo ARS) --}}
+                                    <td class="px-4 py-3" x-show="invoiceType === 'ars'">
                                         <template x-if="!it._edit">
                                             <span x-text="it.authorization_no || '-'"></span>
                                         </template>
@@ -169,10 +183,10 @@
                                         </template>
                                     </td>
 
-                                    {{-- Paciente --}}
-                                    <td class="px-4 py-3">
+                                    {{-- Paciente (solo ARS) --}}
+                                    <td class="px-4 py-3" x-show="invoiceType === 'ars'">
                                         <template x-if="!it._edit">
-                                            <span x-text="it.patient_name"></span>
+                                            <span x-text="it.patient_name || '-'"></span>
                                         </template>
                                         <template x-if="it._edit">
                                             <input x-model="it.patient_name"
@@ -192,8 +206,8 @@
                                         </template>
                                     </td>
 
-                                    {{-- Afiliado --}}
-                                    <td class="px-4 py-3">
+                                    {{-- Afiliado (solo ARS) --}}
+                                    <td class="px-4 py-3" x-show="invoiceType === 'ars'">
                                         <template x-if="!it._edit">
                                             <span x-text="it.affiliate_no || '-'"></span>
                                         </template>
@@ -201,6 +215,18 @@
                                             <input x-model="it.affiliate_no"
                                                 class="w-full rounded-lg border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
                                                 placeholder="Afiliado">
+                                        </template>
+                                    </td>
+
+                                    {{-- Descripción (solo clínica) --}}
+                                    <td class="px-4 py-3" x-show="invoiceType === 'clinica'">
+                                        <template x-if="!it._edit">
+                                            <span x-text="it.description || '-'"></span>
+                                        </template>
+                                        <template x-if="it._edit">
+                                            <input x-model="it.description"
+                                                class="w-full rounded-lg border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                                                placeholder="Descripción del servicio">
                                         </template>
                                     </td>
 
@@ -217,14 +243,21 @@
                                     </td>
 
                                     {{-- Acciones --}}
-                                    @role('admin')
+                                    @hasanyrole('admin|analista')
                                         <td class="px-4 py-3 text-right space-x-2">
                                             <template x-if="!it._edit">
-                                                <button type="button"
-                                                    class="rounded-lg bg-gray-600 px-4 py-2 text-white font-medium hover:bg-gray-700"
-                                                    @click="startEdit(it)">
-                                                    Editar
-                                                </button>
+                                                <span class="inline-flex gap-2">
+                                                    <button type="button"
+                                                        class="rounded-lg bg-gray-600 px-4 py-2 text-white font-medium hover:bg-gray-700"
+                                                        @click="startEdit(it)">
+                                                        Editar
+                                                    </button>
+                                                    <button type="button"
+                                                        class="rounded-lg bg-red-600 px-4 py-2 text-white font-medium hover:bg-red-700"
+                                                        @click="deleteItem(it)">
+                                                        Eliminar
+                                                    </button>
+                                                </span>
                                             </template>
 
                                             <template x-if="it._edit">
@@ -244,9 +277,61 @@
                                                 </button>
                                             </template>
                                         </td>
-                                    @endrole
+                                    @endhasanyrole
                                 </tr>
                             </template>
+
+                            {{-- Fila nueva línea --}}
+                            @hasanyrole('admin|analista')
+                            <template x-if="showAddForm">
+                                <tr class="border-t-2 border-indigo-400 bg-indigo-50/30 dark:bg-indigo-900/10 align-top">
+                                    {{-- ARS: autorización --}}
+                                    <td class="px-4 py-3" x-show="invoiceType === 'ars'">
+                                        <input x-model="newItem.authorization_no"
+                                            class="w-full rounded-lg border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 text-sm"
+                                            placeholder="Autorización">
+                                    </td>
+                                    {{-- ARS: paciente --}}
+                                    <td class="px-4 py-3" x-show="invoiceType === 'ars'">
+                                        <input x-model="newItem.patient_name"
+                                            class="w-full rounded-lg border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 text-sm"
+                                            placeholder="Paciente *">
+                                    </td>
+                                    {{-- Fecha (siempre) --}}
+                                    <td class="px-4 py-3">
+                                        <input type="date" x-model="newItem.service_date"
+                                            class="w-full rounded-lg border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 text-sm">
+                                    </td>
+                                    {{-- ARS: afiliado --}}
+                                    <td class="px-4 py-3" x-show="invoiceType === 'ars'">
+                                        <input x-model="newItem.affiliate_no"
+                                            class="w-full rounded-lg border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 text-sm"
+                                            placeholder="Afiliado">
+                                    </td>
+                                    {{-- Clínica: descripción --}}
+                                    <td class="px-4 py-3" x-show="invoiceType === 'clinica'">
+                                        <input x-model="newItem.description"
+                                            class="w-full rounded-lg border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 text-sm"
+                                            placeholder="Descripción *">
+                                    </td>
+                                    {{-- Monto (siempre) --}}
+                                    <td class="px-4 py-3 text-right">
+                                        <input type="number" step="0.01" min="0.01"
+                                            x-model.number="newItem.amount"
+                                            class="w-32 text-right rounded-lg border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 text-sm"
+                                            placeholder="0.00">
+                                    </td>
+                                    <td class="px-4 py-3 text-right">
+                                        <button type="button"
+                                            class="rounded-lg bg-indigo-600 px-4 py-2 text-white text-sm font-medium hover:bg-indigo-700"
+                                            :disabled="addingItem" @click="addItem()">
+                                            <span x-show="!addingItem">Guardar</span>
+                                            <span x-show="addingItem">Guardando...</span>
+                                        </button>
+                                    </td>
+                                </tr>
+                            </template>
+                            @endhasanyrole
                         </tbody>
                     </table>
                 </div>
@@ -317,7 +402,7 @@
                         </span>
                     </div>
                 </div>
-                @role('admin')
+                @hasanyrole('admin|analista')
                     {{-- Form registrar pago --}}
                     <form class="mt-4 grid grid-cols-1 md:grid-cols-5 gap-3"
                         action="{{ route('invoices.payments.store', $invoice) }}" method="POST">
@@ -361,7 +446,7 @@
                             </button>
                         </div>
                     </form>
-                @endrole
+                @endhasanyrole
                 {{-- Tabla pagos --}}
                 <div class="mt-5 overflow-x-auto">
                     <table class="min-w-full text-sm">
@@ -371,9 +456,9 @@
                                 <th class="py-2 text-left">Método</th>
                                 <th class="py-2 text-left">Referencia</th>
                                 <th class="py-2 text-right">Monto</th>
-                                @role('admin')
+                                @hasanyrole('admin|analista')
                                     <th class="py-2 text-right">Acción</th>
-                                @endrole
+                                @endhasanyrole
                             </tr>
                         </thead>
                         <tbody class="text-gray-800 dark:text-gray-100">
@@ -384,7 +469,7 @@
                                     <td class="py-2 text-gray-500 dark:text-gray-300">{{ $p->reference_no ?: '-' }}
                                     </td>
                                     <td class="py-2 text-right">${{ number_format((float) $p->amount, 2) }}</td>
-                                    @role('admin')
+                                    @hasanyrole('admin|analista')
                                         <td class="py-2 text-right">
                                             <form action="{{ route('invoices.payments.destroy', [$invoice, $p]) }}"
                                                 method="POST" onsubmit="return confirm('¿Eliminar este pago?');"
@@ -397,7 +482,7 @@
                                                 </button>
                                             </form>
                                         </td>
-                                    @endrole
+                                    @endhasanyrole
                                 </tr>
                             @empty
                                 <tr>
@@ -533,8 +618,8 @@
                         </div>
 
                         <!-- Acciones -->
-                        @role('admin')
-                            @role('admin')
+                        @hasanyrole('admin|analista')
+                            @hasanyrole('admin|analista')
 <template x-if="!openRec">
   <div class="flex items-center gap-2">
     <form method="POST" action="{{ route('invoices.reconciliations.store', $invoice) }}">
@@ -562,7 +647,7 @@
     </button>
   </form>
 </template>
-@endrole
+@endhasanyrole
 
                             <template x-if="openRec">
                                 <form method="POST" :action="`/reconciliations/${openRec.id}/close`"
@@ -582,7 +667,7 @@
                                     Volver a actual
                                 </button>
                             </template>
-                        @endrole
+                        @endhasanyrole
                     </div>
                 </div>
 
@@ -616,9 +701,9 @@
                                         <th class="py-2 text-right">Ajuste</th>
                                         <th class="py-2 text-right">Balance</th>
                                         <th class="py-2 text-left">Estado</th>
-                                        @role('admin')
+                                        @hasanyrole('admin|analista')
                                             <th class="py-2 text-right">Acción</th>
-                                        @endrole
+                                        @endhasanyrole
                                     </tr>
                                 </thead>
 
@@ -683,7 +768,7 @@
                                                     </select>
                                                 </template>
                                             </td>
-                                            @role('admin')
+                                            @hasanyrole('admin|analista')
                                                 <td class="py-2 text-right space-x-2">
                                                     <template x-if="!isEditable(it)">
                                                         <span class="text-xs text-gray-500 dark:text-gray-400">—</span>
@@ -713,7 +798,7 @@
                                                         </button>
                                                     </template>
                                                 </td>
-                                            @endrole
+                                            @endhasanyrole
                                         </tr>
                                     </template>
                                 </tbody>
@@ -918,6 +1003,7 @@
         function invoiceViewPage(payload) {
             return {
                 invoiceId: payload.invoiceId,
+                invoiceType: payload.invoiceType || 'ars',
                 items: payload.items || [],
                 insurerName: payload.insurerName || '',
                 routes: payload.routes || {},
@@ -925,6 +1011,14 @@
                 flash: {
                     type: '',
                     message: ''
+                },
+
+                showAddForm: false,
+                addingItem: false,
+                newItem: { service_date: '', description: '', patient_name: '', affiliate_no: '', authorization_no: '', amount: '' },
+
+                resetNewItem() {
+                    this.newItem = { service_date: '', description: '', patient_name: '', affiliate_no: '', authorization_no: '', amount: '' };
                 },
 
                 csrf() {
@@ -964,6 +1058,78 @@
                     });
                 },
 
+                async addItem() {
+                    this.flash = { type: '', message: '' };
+
+                    const isArs = this.invoiceType === 'ars';
+                    const missingArs = isArs && (!this.newItem.patient_name || !this.newItem.service_date);
+                    const missingClinica = !isArs && (!this.newItem.description || !this.newItem.service_date);
+
+                    if (missingArs || missingClinica || !(parseFloat(this.newItem.amount) > 0)) {
+                        this.flash = {
+                            type: 'error',
+                            message: isArs
+                                ? 'Completa paciente, fecha y monto válido.'
+                                : 'Completa descripción, fecha y monto válido.',
+                        };
+                        return;
+                    }
+
+                    this.addingItem = true;
+                    try {
+                        const res = await fetch(this.routes.storeItem, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRF-TOKEN': this.csrf(),
+                                'Accept': 'application/json',
+                            },
+                            body: JSON.stringify(this.newItem),
+                        });
+
+                        const json = await res.json();
+                        if (!res.ok || !json.ok) {
+                            this.flash = { type: 'error', message: json.message || 'No se pudo agregar la línea.' };
+                            return;
+                        }
+
+                        this.items.push(json.item);
+                        this.resetNewItem();
+                        this.showAddForm = false;
+                        this.flash = { type: 'success', message: 'Línea agregada correctamente.' };
+                    } catch (e) {
+                        this.flash = { type: 'error', message: 'Error de red agregando la línea.' };
+                    } finally {
+                        this.addingItem = false;
+                    }
+                },
+
+                async deleteItem(it) {
+                    if (!confirm('¿Eliminar esta línea? Esta acción no se puede deshacer.')) return;
+
+                    this.flash = { type: '', message: '' };
+                    try {
+                        const res = await fetch(`${this.routes.updateItemBase}/${it.id}`, {
+                            method: 'DELETE',
+                            headers: {
+                                'X-CSRF-TOKEN': this.csrf(),
+                                'Accept': 'application/json',
+                            },
+                        });
+
+                        const json = await res.json();
+                        if (!res.ok || !json.ok) {
+                            this.flash = { type: 'error', message: json.message || 'No se pudo eliminar la línea.' };
+                            return;
+                        }
+
+                        this.items = this.items.filter(i => i.id !== it.id);
+                        this.flash = { type: 'success', message: 'Línea eliminada correctamente.' };
+                    } catch (e) {
+                        this.flash = { type: 'error', message: 'Error de red eliminando la línea.' };
+                    }
+                },
+
                 async saveItem(it) {
                     this.flash = {
                         type: '',
@@ -971,10 +1137,15 @@
                     };
 
                     // validación ligera cliente
-                    if (!it.patient_name || !it.service_date || !(parseFloat(it.amount) > 0)) {
+                    const isArs = this.invoiceType === 'ars';
+                    const invalid = !it.service_date || !(parseFloat(it.amount) > 0) ||
+                        (isArs && !it.patient_name) || (!isArs && !it.description);
+                    if (invalid) {
                         this.flash = {
                             type: 'error',
-                            message: 'Completa paciente, fecha y monto válido.'
+                            message: isArs
+                                ? 'Completa paciente, fecha y monto válido.'
+                                : 'Completa descripción, fecha y monto válido.',
                         };
                         return;
                     }
@@ -993,6 +1164,7 @@
                             },
                             body: JSON.stringify({
                                 service_date: it.service_date,
+                                description: it.description,
                                 patient_name: it.patient_name,
                                 affiliate_no: it.affiliate_no,
                                 authorization_no: it.authorization_no,

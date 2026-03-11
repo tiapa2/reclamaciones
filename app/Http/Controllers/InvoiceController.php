@@ -88,6 +88,7 @@ class InvoiceController extends Controller
                 'insurer_id'   => $data['insurer_id'],
                 'ncf_type_id'  => $data['ncf_type_id'],
                 'invoice_date' => $data['invoice_date'],
+                'invoice_type' => $data['invoice_type'],
 
                 'ncf_seq'      => $next,
                 'ncf_number'   => $ncfNumber,
@@ -98,13 +99,16 @@ class InvoiceController extends Controller
             ]);
 
             // 5) Items
-            $rows = collect($data['items'])->map(function ($it) use ($invoice) {
+            $isArs = $invoice->invoice_type === 'ars';
+
+            $rows = collect($data['items'])->map(function ($it) use ($invoice, $isArs) {
                 return [
                     'invoice_id'       => $invoice->id,
                     'service_date'     => $it['service_date'],
-                    'patient_name'     => $it['patient_name'],
-                    'affiliate_no'     => $it['affiliate_no'],
-                    'authorization_no' => $it['authorization_no'],
+                    'description'      => !$isArs ? ($it['description'] ?? null) : null,
+                    'patient_name'     => $isArs ? ($it['patient_name'] ?? null) : null,
+                    'affiliate_no'     => $isArs ? ($it['affiliate_no'] ?? null) : null,
+                    'authorization_no' => $isArs ? ($it['authorization_no'] ?? null) : null,
                     'procedure_id'     => $it['procedure_id'] ?? null,
                     'amount'           => $it['amount'],
                     'created_at'       => now(),
@@ -239,11 +243,13 @@ class InvoiceController extends Controller
             'payment_status' => $invoice->payment_status ?? 'unpaid',
             'paid_at' => optional($invoice->paid_at)->toDateTimeString(),
 
+            'invoice_type' => $invoice->invoice_type ?? 'ars',
             'created_by' => $invoice->createdBy?->name,
 
             'items' => $invoice->items->map(fn($it) => [
                 'id' => $it->id,
                 'service_date' => optional($it->service_date)->toDateString(),
+                'description' => $it->description,
                 'patient_name' => $it->patient_name,
                 'affiliate_no' => $it->affiliate_no,
                 'authorization_no' => $it->authorization_no,

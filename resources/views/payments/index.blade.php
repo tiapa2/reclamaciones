@@ -34,12 +34,12 @@
                                       focus:border-indigo-500 focus:ring-indigo-500"
                                placeholder="Buscar por NCF, médico, ARS o referencia..." />
                     </form>
-                    @role('admin')
+                    @hasanyrole('admin|analista')
                     <button type="button" @click="openCreate()"
                             class="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-white font-medium hover:bg-blue-700">
                         + Registrar pago
                     </button>
-                    @endrole
+                    @endhasanyrole
                 </div>
 
                 {{-- LISTADO --}}
@@ -54,9 +54,9 @@
                                 <th class="py-3 text-left font-semibold">Método</th>
                                 <th class="py-3 text-left font-semibold">Ref.</th>
                                 <th class="py-3 text-right font-semibold">Monto</th>
-                                @role('admin')
+                                @hasanyrole('admin|analista')
                                 <th class="py-3 text-right font-semibold">Acciones</th>
-                                @endrole
+                                @endhasanyrole
                             </tr>
                         </thead>
 
@@ -70,7 +70,7 @@
                                     <td class="py-3">{{ $p->method }}</td>
                                     <td class="py-3 text-gray-500 dark:text-gray-400">{{ $p->reference_no ?: '-' }}</td>
                                     <td class="py-3 text-right">{{ number_format((float)$p->amount, 2) }}</td>
-                                    @role('admin')
+                                    @hasanyrole('admin|analista')
                                     <td class="py-3 text-right">
                                         <form method="POST" action="{{ route('payments.destroy', $p) }}" class="inline"
                                               onsubmit="return confirm('¿Eliminar este pago?');">
@@ -82,7 +82,7 @@
                                             </button>
                                         </form>
                                     </td>
-                                    @endrole
+                                    @endhasanyrole
                                 </tr>
                             @empty
                                 <tr>

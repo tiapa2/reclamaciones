@@ -36,4 +36,19 @@ class User extends Authenticatable
     {
         return $this->hasOne(\App\Models\Doctor::class);
     }
+
+    public function createdInvoices()
+    {
+        return $this->hasMany(\App\Models\Invoice::class, 'created_by');
+    }
+
+    public function createdPayments()
+    {
+        return $this->hasMany(\App\Models\InvoicePayment::class, 'created_by');
+    }
+
+    public function createdFactorings()
+    {
+        return $this->hasMany(\App\Models\Factoring::class, 'created_by');
+    }
 }

@@ -12,6 +12,7 @@ use App\Http\Controllers\InvoicePaymentController;
 use App\Http\Controllers\InvoiceQueryController;
 use App\Http\Controllers\InvoiceReconciliationController;
 use App\Http\Controllers\InvoiceReconciliationItemController;
+use App\Http\Controllers\AnalystController;
 use App\Http\Controllers\PaymentController;
 
 Route::get('/', function () {
@@ -34,6 +35,13 @@ Route::patch('/doctors/{doctor}/user/reset-password', [DoctorController::class, 
     Route::get('/invoices/search', [InvoiceController::class, 'search'])->name('invoices.search');
 
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
+
+    // Gestión de analistas (solo admin)
+    Route::get('/analysts', [AnalystController::class, 'index'])->name('analysts.index');
+    Route::post('/analysts', [AnalystController::class, 'store'])->name('analysts.store');
+    Route::get('/analysts/{analyst}', [AnalystController::class, 'show'])->name('analysts.show');
+    Route::delete('/analysts/{analyst}', [AnalystController::class, 'destroy'])->name('analysts.destroy');
+    Route::patch('/analysts/{analyst}/reset-password', [AnalystController::class, 'resetPassword'])->name('analysts.reset-password');
     Route::resource('insurers', InsurerController::class)->except(['create', 'edit', 'show']);
     Route::resource('doctors', DoctorController::class)->except(['create', 'edit', 'show']);
     Route::resource('invoices', InvoiceController::class)->only(['index', 'store', 'destroy']);
@@ -45,8 +53,8 @@ Route::patch('/doctors/{doctor}/user/reset-password', [DoctorController::class, 
     Route::get('/doctors/{doctor}/insurers', [DoctorController::class, 'insurers'])
         ->name('doctors.insurers');
 
-    Route::get('invoices/{invoice}', [InvoiceController::class, 'show'])
-        ->name('invoices.show');
+    Route::get('invoices/{invoice}/view', [InvoiceController::class, 'view'])
+        ->name('invoices.view');
 
     Route::patch('invoices/{invoice}/void', [InvoiceController::class, 'void'])
         ->name('invoices.void');
@@ -67,6 +75,7 @@ Route::patch('/doctors/{doctor}/user/reset-password', [DoctorController::class, 
         Route::get('{invoice}/view', [InvoiceController::class, 'view'])->name('view');
         Route::get('{invoice}/pdf',  [InvoiceController::class, 'pdf'])->name('pdf');
     });
+    Route::post('/invoices/{invoice}/items', [InvoiceItemController::class, 'store'])->name('invoice-items.store');
     Route::patch('/invoice-items/{item}', [InvoiceItemController::class, 'update'])->name('invoice-items.update');
     Route::delete('/invoice-items/{item}', [InvoiceItemController::class, 'destroy'])->name('invoice-items.destroy');
 

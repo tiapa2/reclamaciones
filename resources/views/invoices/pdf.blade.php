@@ -10,7 +10,7 @@
     @page { margin: 38px 42px; } /* top right bottom left */
     body {
       font-family: DejaVu Sans, Arial, Helvetica, sans-serif;
-      font-size: 12px;
+      font-size: 10px;
       color: #111;
     }
 
@@ -20,7 +20,7 @@
     .clearfix { clear: both; }
 
     .title-name {
-      font-size: 22px;
+      font-size: 18px;
       font-weight: 700;
       margin: 0 0 10px 0;
     }
@@ -38,7 +38,7 @@
     .section-box {
       border: 1px solid #e5e7eb;
       background: #f7f7f7;
-      padding: 10px 12px;
+      padding: 6px 4px;
       margin-top: 18px;
     }
 
@@ -56,17 +56,17 @@
       background: #cdeacb; /* verde suave */
       color: #111;
       font-weight: 700;
-      font-size: 12px;
-      padding: 10px 8px;
+      font-size: 10px;
+      padding: 6px 4px;
       border-bottom: 1px solid #e5e7eb;
       text-align: left;
     }
 
     .items tbody td {
-      padding: 9px 8px;
+      padding: 6px 4px;
       border-bottom: 1px solid #e5e7eb;
       vertical-align: top;
-      font-size: 12px;
+      font-size: 10px;
     }
 
     .right { text-align: right; }
@@ -90,13 +90,13 @@
     }
 
     .big-amount {
-      font-size: 20px;
+      font-size: 16px;
       font-weight: 800;
       margin-top: 6px;
     }
 
     .big-amount-right {
-      font-size: 22px;
+      font-size: 18px;
       font-weight: 900;
     }
 
@@ -109,7 +109,7 @@
       width: 33.33%;
       float: left;
       text-align: center;
-      font-size: 12px;
+      font-size: 10px;
       color: #111;
     }
 

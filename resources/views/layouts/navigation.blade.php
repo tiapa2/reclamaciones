@@ -18,14 +18,14 @@
                     <x-nav-link :href="route('invoices.index')" :active="request()->routeIs('invoices.*')">
                         {{ __('Facturación') }}
                     </x-nav-link>
-                    @role('admin')
+                    @hasanyrole('admin|analista')
                     <x-nav-link :href="route('invoice-query.index')" :active="request()->routeIs('invoice-query.*')">
                         {{ __('Consulta Facturas') }}
                     </x-nav-link>
                     <x-nav-link :href="route('factorings.index')" :active="request()->routeIs('factorings.*')">
                         {{ __('Factoring') }}
                     </x-nav-link>
-                    @endrole
+                    @endhasanyrole
                     <x-nav-link :href="route('payments.index')" :active="request()->routeIs('payments.*')">
                         {{ __('Pagos') }}
                     </x-nav-link>
@@ -38,6 +38,10 @@
 
                     <x-nav-link :href="route('insurers.index')" :active="request()->routeIs('insurers.*')">
                         {{ __('Aseguradoras') }}
+                    </x-nav-link>
+
+                    <x-nav-link :href="route('analysts.index')" :active="request()->routeIs('analysts.*')">
+                        {{ __('Analistas') }}
                     </x-nav-link>
                     @endrole
                 </div>
