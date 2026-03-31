@@ -218,7 +218,7 @@ class InvoiceController extends Controller
         'doctor',
         'insurer',
         'ncfType',
-        'items'=> fn($q) => $q->orderBy('id'),
+        'items',
         'createdBy',
         'payments' => function ($q) {
             $q->orderByDesc('payment_date')->orderByDesc('id');
@@ -274,7 +274,7 @@ public function view(Invoice $invoice)
     $invoice->load([
   'doctor',
   'insurer',
-  'items' => fn($q) => $q->orderBy('id'),
+  'items',
   'payments' => fn($q) => $q->orderByDesc('payment_date')->orderByDesc('id'),
   'reconciliations' => fn($q) => $q->orderByDesc('id'),
   'reconciliations.items' => fn($q) => $q->orderBy('id'),
