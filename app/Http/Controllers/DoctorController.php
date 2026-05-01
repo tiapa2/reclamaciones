@@ -40,7 +40,15 @@ class DoctorController extends Controller
             ->orderBy('id')
             ->get(['id', 'name', 'prefix']);
 
-        return view('doctors.index', compact('doctors', 'q', 'insurers', 'ncfTypes'));
+        // Datos que el admin necesita pasar al admin de kontab-erp para registrar
+        // el webhook que cierra el loop DGII. Visible en el modal del médico (tab e-CF).
+        $kontabIntegration = [
+            'webhook_url' => route('webhooks.kontab'),
+            'webhook_secret' => (string) config('services.kontab.webhook_secret', ''),
+            'events' => ['invoice.dgii.accepted', 'invoice.dgii.rejected'],
+        ];
+
+        return view('doctors.index', compact('doctors', 'q', 'insurers', 'ncfTypes', 'kontabIntegration'));
     }
 
     public function store(StoreDoctorRequest $request)

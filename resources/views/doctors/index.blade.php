@@ -438,6 +438,73 @@
                                     Guarda el médico primero para poder probar la conexión.
                                 </p>
                             </div>
+
+                            {{-- Datos del webhook para que el admin de kontab-erp lo registre --}}
+                            <div class="mt-5 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-900/20 p-4">
+                                <button type="button" @click="showWebhookHelp = !showWebhookHelp"
+                                    class="w-full flex items-center justify-between text-left">
+                                    <div>
+                                        <div class="text-sm font-semibold text-amber-900 dark:text-amber-200">
+                                            ⓘ Datos para configurar en kontab.com.do
+                                        </div>
+                                        <div class="text-xs text-amber-700 dark:text-amber-300/80">
+                                            Pasa esto al admin de kontab para que registre el webhook (necesario para que la factura quede confirmada por DGII).
+                                        </div>
+                                    </div>
+                                    <i class="text-amber-700 dark:text-amber-300" x-text="showWebhookHelp ? '▾' : '▸'"></i>
+                                </button>
+
+                                <div x-show="showWebhookHelp" x-transition class="mt-4 space-y-3 text-sm">
+                                    <div>
+                                        <label class="block text-xs font-medium text-amber-900 dark:text-amber-200 mb-1">URL del webhook</label>
+                                        <div class="flex items-center gap-2">
+                                            <input type="text" readonly value="{{ $kontabIntegration['webhook_url'] }}"
+                                                class="flex-1 rounded-md border-amber-300 bg-white dark:bg-gray-900 dark:text-gray-100 text-xs font-mono px-2 py-1.5">
+                                            <button type="button" @click="copyToClipboard('{{ $kontabIntegration['webhook_url'] }}', 'url')"
+                                                class="rounded-md bg-amber-600 hover:bg-amber-700 text-white text-xs px-3 py-1.5">
+                                                <span x-text="copiedField === 'url' ? '✓ Copiado' : 'Copiar'"></span>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label class="block text-xs font-medium text-amber-900 dark:text-amber-200 mb-1">Secret</label>
+                                        <div class="flex items-center gap-2">
+                                            <input :type="showSecret ? 'text' : 'password'" readonly
+                                                value="{{ $kontabIntegration['webhook_secret'] ?: '(no configurado en server)' }}"
+                                                class="flex-1 rounded-md border-amber-300 bg-white dark:bg-gray-900 dark:text-gray-100 text-xs font-mono px-2 py-1.5">
+                                            <button type="button" @click="showSecret = !showSecret"
+                                                class="rounded-md bg-white border border-amber-300 text-amber-800 text-xs px-3 py-1.5">
+                                                <span x-text="showSecret ? 'Ocultar' : 'Ver'"></span>
+                                            </button>
+                                            <button type="button" @click="copyToClipboard('{{ $kontabIntegration['webhook_secret'] }}', 'secret')"
+                                                :disabled="!'{{ $kontabIntegration['webhook_secret'] }}'.length"
+                                                class="rounded-md bg-amber-600 hover:bg-amber-700 text-white text-xs px-3 py-1.5 disabled:opacity-50">
+                                                <span x-text="copiedField === 'secret' ? '✓ Copiado' : 'Copiar'"></span>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label class="block text-xs font-medium text-amber-900 dark:text-amber-200 mb-1">Eventos</label>
+                                        <div class="flex flex-wrap gap-1.5">
+                                            @foreach($kontabIntegration['events'] as $ev)
+                                                <code class="rounded bg-white dark:bg-gray-900 dark:text-gray-100 text-xs font-mono px-2 py-1 border border-amber-200">{{ $ev }}</code>
+                                            @endforeach
+                                        </div>
+                                    </div>
+
+                                    <div class="text-xs text-amber-800 dark:text-amber-300/90 bg-white/50 dark:bg-amber-900/30 rounded p-3 leading-relaxed">
+                                        <p class="font-semibold mb-1">📋 Pasos para el admin de kontab:</p>
+                                        <ol class="list-decimal list-inside space-y-0.5">
+                                            <li>Entrar a kontab.com.do → Configuración → API & Integraciones → Webhooks.</li>
+                                            <li>Click "Nuevo webhook", pegar la <strong>URL</strong> y el <strong>Secret</strong> de arriba.</li>
+                                            <li>Marcar los 2 eventos listados.</li>
+                                            <li>Activar y guardar.</li>
+                                        </ol>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <!-- FOOTER -->
@@ -505,6 +572,17 @@
 
                     kontabTestMsg: '',
                     kontabTestClass: 'text-gray-500',
+                    showWebhookHelp: false,
+                    showSecret: false,
+                    copiedField: null,
+
+                    copyToClipboard(text, field) {
+                        if (!text) return;
+                        navigator.clipboard.writeText(text).then(() => {
+                            this.copiedField = field;
+                            setTimeout(() => { this.copiedField = null; }, 1500);
+                        });
+                    },
 
                     async testKontabConnection() {
                         if (!this.form.id) return;
