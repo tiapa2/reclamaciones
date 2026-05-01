@@ -22,3 +22,13 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# Server-side hardening (vive solo en producción, no se versiona)
+public/.user.ini
+**/.htaccess
+!public/.htaccess
+!.well-known/.htaccess
+
+# Backups locales
+*.bak
+*.predeploy.bak
