@@ -41,8 +41,8 @@ jobs:
             public/build/ \
             ${{ vars.DEPLOY_USER }}@${{ vars.DEPLOY_HOST }}:${{ vars.DEPLOY_PATH }}/public/build/
 
-      - name: Run deploy.sh on server
+      - name: Run deploy.sh on server (self-bootstrap si falta)
         run: |
           ssh -i ~/.ssh/deploy_key -p ${{ vars.DEPLOY_PORT }} \
             ${{ vars.DEPLOY_USER }}@${{ vars.DEPLOY_HOST }} \
-            "cd ${{ vars.DEPLOY_PATH }} && chmod +x deploy.sh && bash deploy.sh"
+            "cd ${{ vars.DEPLOY_PATH }} && git pull --ff-only origin main && chmod +x deploy.sh && bash deploy.sh"
