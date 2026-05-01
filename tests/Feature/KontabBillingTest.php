@@ -9,10 +9,13 @@ use App\Models\User;
 use App\Services\KontabClient;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Http;
+use Spatie\Permission\Models\Role;
 
 beforeEach(function () {
     config(['services.kontab.base_url' => 'https://kontab.test/api/integration/v1']);
-    config(['app.env' => 'testing']);
+    Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'doctor', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'analista', 'guard_name' => 'web']);
 });
 
 it('genera NCF local cuando el doctor no tiene facturación electrónica activa', function () {
@@ -29,7 +32,7 @@ it('genera NCF local cuando el doctor no tiene facturación electrónica activa'
     ]);
     $insurer = Insurer::create(['name' => 'ARS Test', 'rnc' => '222222222']);
     $ncfType = NcfType::create(['name' => 'B01', 'prefix' => 'B01', 'active' => true]);
-    DoctorNcfAuthorization::create([
+    $auth = new DoctorNcfAuthorization([
         'doctor_id' => $doctor->id,
         'ncf_type_id' => $ncfType->id,
         'from_number' => 1,
@@ -37,6 +40,8 @@ it('genera NCF local cuando el doctor no tiene facturación electrónica activa'
         'current_number' => 1,
         'active' => true,
     ]);
+    $auth->insurer_id = $insurer->id; // no está en $fillable
+    $auth->save();
 
     $this->actingAs($admin)->post('/invoices', [
         'doctor_id' => $doctor->id,
@@ -44,7 +49,7 @@ it('genera NCF local cuando el doctor no tiene facturación electrónica activa'
         'ncf_type_id' => $ncfType->id,
         'invoice_date' => now()->toDateString(),
         'invoice_type' => 'ars',
-        'items' => [['service_date' => now()->toDateString(), 'patient_name' => 'Juan', 'amount' => 1000]],
+        'items' => [['service_date' => now()->toDateString(), 'patient_name' => 'Juan', 'authorization_no' => 'AUTH-1', 'amount' => 1000]],
     ]);
 
     $invoice = Invoice::latest()->first();
@@ -87,7 +92,7 @@ it('envía a kontab-erp cuando el doctor tiene facturación electrónica y bloqu
         'ncf_type_id' => $ncfType->id,
         'invoice_date' => now()->toDateString(),
         'invoice_type' => 'ars',
-        'items' => [['service_date' => now()->toDateString(), 'patient_name' => 'Ana', 'amount' => 5000]],
+        'items' => [['service_date' => now()->toDateString(), 'patient_name' => 'Ana', 'authorization_no' => 'AUTH-2', 'amount' => 5000]],
     ]);
 
     $invoice = Invoice::latest()->first();
@@ -108,9 +113,12 @@ it('webhook DGII accepted actualiza el status', function () {
     $doctor = Doctor::create(['rnc' => '5', 'full_name' => 'X', 'email' => 'x@x.com', 'e_invoicing_enabled' => true,
         'kontab_api_key_id' => 'k', 'kontab_api_secret_encrypted' => Crypt::encryptString('s')]);
     $insurer = Insurer::create(['name' => 'ARS', 'rnc' => '6']);
+    $user = User::factory()->create();
+    $ncfType = NcfType::create(['name' => 'E31', 'prefix' => 'E31', 'active' => true]);
     $invoice = Invoice::create([
-        'doctor_id' => $doctor->id, 'insurer_id' => $insurer->id, 'ncf_type_id' => 1,
+        'doctor_id' => $doctor->id, 'insurer_id' => $insurer->id, 'ncf_type_id' => $ncfType->id,
         'invoice_date' => now(), 'total_amount' => 1000, 'status' => 'issued',
+        'created_by' => $user->id,
         'kontab_invoice_id' => 7777, 'kontab_dgii_status' => 'pending',
     ]);
 
