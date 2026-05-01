@@ -32,7 +32,7 @@ class KontabClient
             throw new RuntimeException('El doctor no tiene credenciales de kontab-erp configuradas.');
         }
 
-        $this->baseUrl = rtrim(config('services.kontab.base_url', env('KONTAB_API_BASE_URL', 'https://kontab.com.do/api/integration/v1')), '/');
+        $this->baseUrl = rtrim(config('services.kontab.base_url', 'https://kontab.com.do/api/integration/v1'), '/');
         $this->apiKeyId = $doctor->kontab_api_key_id;
         $this->apiSecret = Crypt::decryptString($doctor->kontab_api_secret_encrypted);
     }

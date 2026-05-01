@@ -77,7 +77,7 @@ class KontabWebhookController extends Controller
 
     private function verifySignature(Request $request): bool
     {
-        $secret = (string) env('KONTAB_WEBHOOK_SECRET', '');
+        $secret = (string) config('services.kontab.webhook_secret', '');
         if ($secret === '') {
             return false;
         }

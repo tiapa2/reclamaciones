@@ -108,7 +108,7 @@ it('envía a kontab-erp cuando el doctor tiene facturación electrónica y bloqu
 
 it('webhook DGII accepted actualiza el status', function () {
     config(['app.cipher' => 'aes-256-cbc']);
-    putenv('KONTAB_WEBHOOK_SECRET=test-webhook-secret');
+    config(['services.kontab.webhook_secret' => 'test-webhook-secret']);
 
     $doctor = Doctor::create(['rnc' => '5', 'full_name' => 'X', 'email' => 'x@x.com', 'e_invoicing_enabled' => true,
         'kontab_api_key_id' => 'k', 'kontab_api_secret_encrypted' => Crypt::encryptString('s')]);
@@ -141,7 +141,7 @@ it('webhook DGII accepted actualiza el status', function () {
 });
 
 it('rechaza webhook con firma inválida', function () {
-    putenv('KONTAB_WEBHOOK_SECRET=test-webhook-secret');
+    config(['services.kontab.webhook_secret' => 'test-webhook-secret']);
 
     $this->postJson('/webhooks/kontab', ['event' => 'x', 'data' => ['invoice_id' => 1]], [
         'X-Kontab-Event' => 'invoice.dgii.accepted',

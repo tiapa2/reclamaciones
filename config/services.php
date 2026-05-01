@@ -37,4 +37,9 @@ return [
         ],
     ],
 
+    'kontab' => [
+        'base_url' => env('KONTAB_API_BASE_URL', 'https://kontab.com.do/api/integration/v1'),
+        'webhook_secret' => env('KONTAB_WEBHOOK_SECRET'),
+    ],
+
 ];
