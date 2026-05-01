@@ -274,7 +274,7 @@ public function view(Invoice $invoice)
     $invoice->load([
   'doctor',
   'insurer',
-  'items',
+  'items' => fn($q) => $q->orderBy('id'),
   'payments' => fn($q) => $q->orderByDesc('payment_date')->orderByDesc('id'),
   'reconciliations' => fn($q) => $q->orderByDesc('id'),
   'reconciliations.items' => fn($q) => $q->orderBy('id'),

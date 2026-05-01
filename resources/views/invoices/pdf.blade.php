@@ -155,7 +155,10 @@
       <div class="mb-6"><span class="label">NCF:</span> {{ $invoice->ncf_number }}</div>
       <div class="mb-6"><span class="label">Válido Hasta:</span> {{ $validUntil }}</div>
       <div class="mb-6"><span class="label">Factura No.:</span> {{ $invoiceNo }}</div>
-      <div class="mb-6"><span class="label">Fecha:</span> {{ optional($invoice->invoice_date)->format('M d, Y') }}</div>
+      <div class="mb-6">
+  <span class="label">Fecha:</span> 
+  {{ optional($invoice->invoice_date)->translatedFormat('d M Y') }}
+</div>
       <div class="mb-6"><span class="label">Condición</span> 30 Días</div>
     </div>
 

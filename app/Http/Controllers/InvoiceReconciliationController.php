@@ -233,10 +233,29 @@ class InvoiceReconciliationController extends Controller
             $aiLines = $result['lines'] ?? [];
             if (!is_array($aiLines)) $aiLines = [];
 
-            // indexa items de conciliación por authorization_no normalizado
+            // indexa items de conciliación por authorization_no normalizado (clave completa)
             $itemsByAuth = $rec->items->mapWithKeys(function ($it) {
                 return [$this->normAuth($it->authorization_no) => $it];
             });
+
+            // índice secundario por últimos 5 dígitos del authorization_no.
+            // Solo se usa como fallback cuando el PDF trae la autorización con prefijos
+            // (p.ej. "2025-34-0045923" vs "45923"). Si hay colisión de sufijo entre
+            // dos items distintos, se descarta la clave para evitar matches ambiguos.
+            $suffixIndex = [];
+            foreach ($rec->items as $itAll) {
+                $full = $this->normAuth($itAll->authorization_no);
+                $suf = $this->authSuffix($itAll->authorization_no);
+                if ($suf === '') continue;
+                if (array_key_exists($suf, $suffixIndex)) {
+                    // colisión: si apunta a otro item, marcamos como ambigua (null)
+                    if ($suffixIndex[$suf] !== null && $this->normAuth($suffixIndex[$suf]->authorization_no) !== $full) {
+                        $suffixIndex[$suf] = null;
+                    }
+                } else {
+                    $suffixIndex[$suf] = $itAll;
+                }
+            }
 
             $matched = 0;
             $unmatched = [];
@@ -245,7 +264,18 @@ class InvoiceReconciliationController extends Controller
                 $authRaw = $line['authorization_no'] ?? null;
                 $key = $this->normAuth($authRaw);
 
-                if ($key === '' || !isset($itemsByAuth[$key])) {
+                $it = null;
+                if ($key !== '' && isset($itemsByAuth[$key])) {
+                    $it = $itemsByAuth[$key];
+                } else {
+                    // fallback: comparar por últimos 5 dígitos
+                    $suf = $this->authSuffix($authRaw);
+                    if ($suf !== '' && isset($suffixIndex[$suf]) && $suffixIndex[$suf] !== null) {
+                        $it = $suffixIndex[$suf];
+                    }
+                }
+
+                if ($it === null) {
                     $unmatched[] = [
                         'authorization_no' => $authRaw,
                         'amount_paid' => $line['amount_paid'] ?? null,
@@ -255,7 +285,6 @@ class InvoiceReconciliationController extends Controller
                 }
 
                 /** @var \App\Models\InvoiceReconciliationItem $it */
-                $it = $itemsByAuth[$key];
 
                 $paid = (float) ($line['amount_paid'] ?? 0);
                 $adj  = (float) ($it->adjustment_amount ?? 0);
@@ -329,6 +358,18 @@ class InvoiceReconciliationController extends Controller
     {
         $s = strtoupper(trim((string) $s));
         return preg_replace('/[^A-Z0-9]/', '', $s) ?: '';
+    }
+
+    /**
+     * Devuelve los últimos 5 dígitos numéricos del authorization_no.
+     * Usado como fallback cuando el PDF trae la autorización con prefijos
+     * como "2025-34-0045923" y el analista la registró como "45923".
+     */
+    private function authSuffix(?string $s): string
+    {
+        $digits = preg_replace('/\D/', '', (string) $s);
+        if ($digits === '' || strlen($digits) < 5) return '';
+        return substr($digits, -5);
     }
 
     /**
