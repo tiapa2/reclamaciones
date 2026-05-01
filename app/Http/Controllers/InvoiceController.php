@@ -8,9 +8,11 @@ use App\Models\DoctorNcfAuthorization;
 use App\Models\Insurer;
 use App\Models\Invoice;
 use App\Models\NcfType;
+use App\Services\KontabClient;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Barryvdh\DomPDF\Facade\Pdf; 
+use Illuminate\Support\Facades\Log;
+use Barryvdh\DomPDF\Facade\Pdf;
 use App\Support\DoctorScope;
 
 class InvoiceController extends Controller
@@ -52,76 +54,118 @@ class InvoiceController extends Controller
     {
         $data = $request->validated();
 
-        DB::transaction(function () use ($data) {
+        $invoice = DB::transaction(function () use ($data) {
+            $doctor = Doctor::findOrFail($data['doctor_id']);
+            $useElectronic = (bool) $doctor->e_invoicing_enabled;
 
-            // 1) Buscar autorización NCF del doctor para ese tipo
-            $auth = \App\Models\DoctorNcfAuthorization::where('doctor_id', $data['doctor_id'])
-                ->where('ncf_type_id', $data['ncf_type_id'])
-                ->where('active', true)
-                ->lockForUpdate()
-                ->first();
+            // ─── Bifurcación: NCF local (default) vs facturación electrónica vía kontab-erp.
+            // Sólo se reserva NCF local si NO va a kontab. Si va a kontab, kontab asigna NCF.
+            $ncfSeq = null;
+            $ncfNumber = null;
+            $ncfTypeIdForRecord = $data['ncf_type_id'];
 
-            if (!$auth) {
-                abort(422, 'El médico no tiene autorización NCF activa para este tipo.');
+            if (! $useElectronic) {
+                $auth = DoctorNcfAuthorization::where('doctor_id', $data['doctor_id'])
+                    ->where('ncf_type_id', $data['ncf_type_id'])
+                    ->where('active', true)
+                    ->lockForUpdate()
+                    ->first();
+
+                if (! $auth) {
+                    abort(422, 'El médico no tiene autorización NCF activa para este tipo.');
+                }
+                if ($auth->expires_at && now()->toDateString() > $auth->expires_at->toDateString()) {
+                    abort(422, 'La autorización NCF está vencida.');
+                }
+                $next = (int) ($auth->current_number ?? $auth->from_number);
+                if ($next < (int) $auth->from_number || $next > (int) $auth->to_number) {
+                    abort(422, 'No hay NCF disponibles en el rango autorizado.');
+                }
+
+                $type = NcfType::findOrFail($data['ncf_type_id']);
+                $ncfSeq = $next;
+                $ncfNumber = $type->prefix.str_pad((string) $next, 8, '0', STR_PAD_LEFT);
             }
 
-            if ($auth->expires_at && now()->toDateString() > $auth->expires_at->toDateString()) {
-                abort(422, 'La autorización NCF está vencida.');
-            }
+            $total = collect($data['items'])->sum(fn ($it) => (float) $it['amount']);
 
-            $next = (int) ($auth->current_number ?? $auth->from_number);
-
-            if ($next < (int)$auth->from_number || $next > (int)$auth->to_number) {
-                abort(422, 'No hay NCF disponibles en el rango autorizado.');
-            }
-
-            // 2) Construir NCF completo: prefix + correlativo padded (8 dígitos)
-            $type = \App\Models\NcfType::findOrFail($data['ncf_type_id']);
-            $ncfNumber = $type->prefix . str_pad((string)$next, 8, '0', STR_PAD_LEFT);
-
-            // 3) Total
-            $total = collect($data['items'])->sum(fn($it) => (float)$it['amount']);
-
-            // 4) Crear invoice
-            $invoice = \App\Models\Invoice::create([
-                'doctor_id'    => $data['doctor_id'],
-                'insurer_id'   => $data['insurer_id'],
-                'ncf_type_id'  => $data['ncf_type_id'],
+            // 1) Crear invoice (con NCF local si aplica, sin si va a kontab)
+            $invoice = Invoice::create([
+                'doctor_id' => $data['doctor_id'],
+                'insurer_id' => $data['insurer_id'],
+                'ncf_type_id' => $ncfTypeIdForRecord,
                 'invoice_date' => $data['invoice_date'],
                 'invoice_type' => $data['invoice_type'],
-
-                'ncf_seq'      => $next,
-                'ncf_number'   => $ncfNumber,
-
+                'ncf_seq' => $ncfSeq,
+                'ncf_number' => $ncfNumber,
                 'total_amount' => $total,
-                'status'       => 'issued',
-                'created_by'   => auth()->id(),
+                'status' => 'issued',
+                'created_by' => auth()->id(),
             ]);
 
-            // 5) Items
+            // 2) Items (mismo formato que antes)
             $isArs = $invoice->invoice_type === 'ars';
-
-            $rows = collect($data['items'])->map(function ($it) use ($invoice, $isArs) {
-                return [
-                    'invoice_id'       => $invoice->id,
-                    'service_date'     => $it['service_date'],
-                    'description'      => !$isArs ? ($it['description'] ?? null) : null,
-                    'patient_name'     => $isArs ? ($it['patient_name'] ?? null) : null,
-                    'affiliate_no'     => $isArs ? ($it['affiliate_no'] ?? null) : null,
-                    'authorization_no' => $isArs ? ($it['authorization_no'] ?? null) : null,
-                    'procedure_id'     => $it['procedure_id'] ?? null,
-                    'amount'           => $it['amount'],
-                    'created_at'       => now(),
-                    'updated_at'       => now(),
-                ];
-            })->all();
-
+            $rows = collect($data['items'])->map(fn ($it) => [
+                'invoice_id' => $invoice->id,
+                'service_date' => $it['service_date'],
+                'description' => ! $isArs ? ($it['description'] ?? null) : null,
+                'patient_name' => $isArs ? ($it['patient_name'] ?? null) : null,
+                'affiliate_no' => $isArs ? ($it['affiliate_no'] ?? null) : null,
+                'authorization_no' => $isArs ? ($it['authorization_no'] ?? null) : null,
+                'procedure_id' => $it['procedure_id'] ?? null,
+                'amount' => $it['amount'],
+                'created_at' => now(),
+                'updated_at' => now(),
+            ])->all();
             $invoice->items()->insert($rows);
 
-            // 6) Incrementar correlativo
-            $auth->current_number = $next + 1;
-            $auth->save();
+            // 3) Incrementar correlativo SOLO si usamos NCF local
+            if (! $useElectronic && isset($auth)) {
+                $auth->current_number = $next + 1;
+                $auth->save();
+            }
+
+            return $invoice;
         });
+
+        // ─── Si el doctor tiene facturación electrónica, despacha a kontab-erp DESPUÉS
+        // del commit (para no envolver llamadas HTTP en una transacción larga).
+        $doctor = $invoice->doctor;
+        if ($doctor && $doctor->e_invoicing_enabled) {
+            try {
+                $invoice->loadMissing(['insurer', 'items', 'ncfType']);
+                $client = new KontabClient($doctor);
+                $contactId = $client->upsertContactForInsurer($invoice->insurer);
+                $resp = $client->createSalesInvoice($invoice, $contactId);
+
+                $invoice->update([
+                    'kontab_contact_id' => $contactId,
+                    'kontab_invoice_id' => $resp['id'],
+                    'kontab_ncf' => $resp['ncf'],
+                    'kontab_track_id' => $resp['track_id'],
+                    'kontab_security_code' => $resp['security_code'],
+                    'kontab_dgii_status' => $resp['dgii_status'] ?? 'pending',
+                    'kontab_dgii_response' => $resp['raw'] ?? null,
+                    'kontab_dgii_response_at' => now(),
+                    // Reflejar el NCF de kontab también en ncf_number para consistencia visual.
+                    'ncf_number' => $resp['ncf'] ?: $invoice->ncf_number,
+                ]);
+
+                Log::info('Factura electrónica creada en kontab-erp', [
+                    'invoice_id' => $invoice->id,
+                    'kontab_invoice_id' => $resp['id'],
+                    'ncf' => $resp['ncf'],
+                ]);
+            } catch (\Throwable $e) {
+                Log::error('Falló envío a kontab-erp', [
+                    'invoice_id' => $invoice->id,
+                    'error' => $e->getMessage(),
+                ]);
+
+                return redirect()->route('invoices.index')
+                    ->with('warning', "Factura #{$invoice->id} creada localmente, pero falló el envío a kontab-erp: {$e->getMessage()}. Reintenta desde el detalle.");
+            }
+        }
 
         return redirect()->route('invoices.index')->with('success', 'Factura creada correctamente.');
     }
@@ -129,6 +173,10 @@ class InvoiceController extends Controller
 
     public function destroy(Invoice $invoice)
     {
+        if ($invoice->isLocked()) {
+            abort(403, 'Esta factura ya fue enviada a Kontab y/o aceptada por DGII. Para corregir, debes anularla y emitir una nota de crédito.');
+        }
+
         DB::transaction(function () use ($invoice) {
             $invoice->items()->delete();
             $invoice->delete();

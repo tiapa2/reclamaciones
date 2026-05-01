@@ -13,11 +13,17 @@ use App\Http\Controllers\InvoiceQueryController;
 use App\Http\Controllers\InvoiceReconciliationController;
 use App\Http\Controllers\InvoiceReconciliationItemController;
 use App\Http\Controllers\AnalystController;
+use App\Http\Controllers\KontabBillingSettingsController;
+use App\Http\Controllers\KontabWebhookController;
 use App\Http\Controllers\PaymentController;
 
 Route::get('/', function () {
     return view('welcome');
 });
+
+// Webhook entrante de kontab-erp (HMAC verificado en el controller; CSRF excluido en bootstrap/app.php).
+Route::post('/webhooks/kontab', [KontabWebhookController::class, 'handle'])
+    ->name('webhooks.kontab');
 
 
 Route::middleware('auth')->group(function () {
@@ -45,6 +51,11 @@ Route::patch('/doctors/{doctor}/user/reset-password', [DoctorController::class, 
     Route::resource('insurers', InsurerController::class)->except(['create', 'edit', 'show']);
     Route::resource('doctors', DoctorController::class)->except(['create', 'edit', 'show']);
     Route::resource('invoices', InvoiceController::class)->only(['index', 'store', 'destroy']);
+
+    // Settings de facturación electrónica (kontab-erp)
+    Route::get('/settings/kontab-billing', [KontabBillingSettingsController::class, 'edit'])->name('settings.kontab-billing.edit');
+    Route::post('/settings/kontab-billing', [KontabBillingSettingsController::class, 'update'])->name('settings.kontab-billing.update');
+    Route::post('/settings/kontab-billing/test', [KontabBillingSettingsController::class, 'test'])->name('settings.kontab-billing.test');
     Route::get('invoices/preview-ncf', [InvoiceController::class, 'previewNcf'])
         ->name('invoices.preview-ncf');
     Route::get('invoices/doctor-data', [InvoiceController::class, 'doctorData'])

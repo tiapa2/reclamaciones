@@ -19,13 +19,43 @@ class Invoice extends Model
         'created_by',
         'paid_amount',
         'payment_status',
-        'paid_at'
+        'paid_at',
+        'kontab_invoice_id',
+        'kontab_contact_id',
+        'kontab_ncf',
+        'kontab_track_id',
+        'kontab_security_code',
+        'kontab_dgii_status',
+        'kontab_dgii_response_at',
+        'kontab_dgii_response',
     ];
 
     protected $casts = [
         'invoice_date' => 'date',
         'total_amount' => 'decimal:2',
+        'kontab_dgii_response_at' => 'datetime',
+        'kontab_dgii_response' => 'array',
     ];
+
+    /**
+     * Devuelve true si la factura ya fue enviada a kontab-erp y NO fue rechazada.
+     * En ese estado se bloquea edición/eliminación.
+     */
+    public function isLocked(): bool
+    {
+        return $this->kontab_invoice_id !== null
+            && $this->kontab_dgii_status !== 'rejected';
+    }
+
+    /** Cache local del kontab_contact_id por (doctor, insurer). */
+    public function insurerKontabContact()
+    {
+        return $this->hasOneThrough(
+            \App\Models\InsurerKontabContact::class,
+            \App\Models\Insurer::class,
+            'id', 'insurer_id', 'insurer_id', 'id',
+        );
+    }
 
     // Relaciones
     public function doctor()

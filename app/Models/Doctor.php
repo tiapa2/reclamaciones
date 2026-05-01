@@ -16,6 +16,17 @@ class Doctor extends Model
         'institution',
         'phone',
         'email',
+        'e_invoicing_enabled',
+        'kontab_api_key_id',
+        'kontab_api_secret_encrypted',
+    ];
+
+    protected $casts = [
+        'e_invoicing_enabled' => 'boolean',
+    ];
+
+    protected $hidden = [
+        'kontab_api_secret_encrypted',
     ];
 
     public function insurers()
