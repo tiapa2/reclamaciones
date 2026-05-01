@@ -48,12 +48,14 @@ class DoctorController extends Controller
         $data = $request->validated();
 
         DB::transaction(function () use ($data) {
+            $base = collect($data)->except(['insurers', 'ncf', 'kontab_api_secret'])->toArray();
+            $base = array_merge($base, $this->buildKontabExtra($data));
 
             $existing = Doctor::withTrashed()->where('rnc', $data['rnc'])->first();
 
             if ($existing && $existing->trashed()) {
                 $existing->restore();
-                $existing->update(collect($data)->except(['insurers', 'ncf'])->toArray());
+                $existing->update($base);
 
                 $this->syncInsurers($existing, $data['insurers'] ?? []);
                 $this->syncNcf($existing, $data['ncf'] ?? []);
@@ -61,7 +63,7 @@ class DoctorController extends Controller
                 return;
             }
 
-            $doctor = Doctor::create(collect($data)->except(['insurers', 'ncf'])->toArray());
+            $doctor = Doctor::create($base);
 
             $this->syncInsurers($doctor, $data['insurers'] ?? []);
             $this->syncNcf($doctor, $data['ncf'] ?? []);
@@ -75,13 +77,59 @@ class DoctorController extends Controller
         $data = $request->validated();
 
         DB::transaction(function () use ($doctor, $data) {
-            $doctor->update(collect($data)->except(['insurers', 'ncf'])->toArray());
+            $payload = collect($data)->except(['insurers', 'ncf', 'kontab_api_secret'])->toArray();
+            $payload = array_merge($payload, $this->buildKontabExtra($data));
+
+            $doctor->update($payload);
 
             $this->syncInsurers($doctor, $data['insurers'] ?? []);
             $this->syncNcf($doctor, $data['ncf'] ?? []);
         });
 
         return redirect()->route('doctors.index')->with('success', 'Médico actualizado correctamente.');
+    }
+
+    /**
+     * Probar credenciales de kontab-erp sin persistir. Usado por el modal de admin.
+     */
+    public function testKontab(Request $request, Doctor $doctor)
+    {
+        $data = $request->validate([
+            'kontab_api_key_id' => ['required', 'string', 'max:120'],
+            'kontab_api_secret' => ['required', 'string', 'max:255'],
+        ]);
+
+        $temp = clone $doctor;
+        $temp->kontab_api_key_id = $data['kontab_api_key_id'];
+        $temp->kontab_api_secret_encrypted = \Illuminate\Support\Facades\Crypt::encryptString($data['kontab_api_secret']);
+
+        try {
+            $ok = (new \App\Services\KontabClient($temp))->testConnection();
+
+            return response()->json([
+                'ok' => $ok,
+                'message' => $ok ? 'Conexión OK con kontab-erp.' : 'Las credenciales fueron rechazadas.',
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json(['ok' => false, 'message' => $e->getMessage()], 422);
+        }
+    }
+
+    /** Convierte campos del request en columnas para persistir (encripta secret si vino). */
+    private function buildKontabExtra(array $data): array
+    {
+        $extra = [
+            'e_invoicing_enabled' => (bool) ($data['e_invoicing_enabled'] ?? false),
+        ];
+
+        if (! empty($data['kontab_api_key_id'])) {
+            $extra['kontab_api_key_id'] = $data['kontab_api_key_id'];
+        }
+        if (! empty($data['kontab_api_secret'])) {
+            $extra['kontab_api_secret_encrypted'] = \Illuminate\Support\Facades\Crypt::encryptString($data['kontab_api_secret']);
+        }
+
+        return $extra;
     }
 
     public function destroy(Doctor $doctor)

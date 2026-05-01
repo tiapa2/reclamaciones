@@ -13,7 +13,6 @@ use App\Http\Controllers\InvoiceQueryController;
 use App\Http\Controllers\InvoiceReconciliationController;
 use App\Http\Controllers\InvoiceReconciliationItemController;
 use App\Http\Controllers\AnalystController;
-use App\Http\Controllers\KontabBillingSettingsController;
 use App\Http\Controllers\KontabWebhookController;
 use App\Http\Controllers\PaymentController;
 
@@ -38,6 +37,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
 Route::patch('/doctors/{doctor}/user/reset-password', [DoctorController::class, 'resetUserPassword'])
     ->name('doctors.user.reset-password');
 
+    // Probar credenciales kontab-erp sin persistir (admin desde modal)
+    Route::post('/doctors/{doctor}/test-kontab', [DoctorController::class, 'testKontab'])
+        ->name('doctors.test-kontab');
+
     Route::get('/invoices/search', [InvoiceController::class, 'search'])->name('invoices.search');
 
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
@@ -51,11 +54,6 @@ Route::patch('/doctors/{doctor}/user/reset-password', [DoctorController::class, 
     Route::resource('insurers', InsurerController::class)->except(['create', 'edit', 'show']);
     Route::resource('doctors', DoctorController::class)->except(['create', 'edit', 'show']);
     Route::resource('invoices', InvoiceController::class)->only(['index', 'store', 'destroy']);
-
-    // Settings de facturación electrónica (kontab-erp)
-    Route::get('/settings/kontab-billing', [KontabBillingSettingsController::class, 'edit'])->name('settings.kontab-billing.edit');
-    Route::post('/settings/kontab-billing', [KontabBillingSettingsController::class, 'update'])->name('settings.kontab-billing.update');
-    Route::post('/settings/kontab-billing/test', [KontabBillingSettingsController::class, 'test'])->name('settings.kontab-billing.test');
     Route::get('invoices/preview-ncf', [InvoiceController::class, 'previewNcf'])
         ->name('invoices.preview-ncf');
     Route::get('invoices/doctor-data', [InvoiceController::class, 'doctorData'])

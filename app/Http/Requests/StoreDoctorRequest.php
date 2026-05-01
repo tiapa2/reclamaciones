@@ -35,6 +35,10 @@ class StoreDoctorRequest extends FormRequest
 'ncf.*.requested_at' => ['nullable', 'date'],
 'ncf.*.expires_at' => ['nullable', 'date'],
 
+        // Facturación electrónica vía kontab-erp (configurada por admin)
+        'e_invoicing_enabled' => ['nullable', 'boolean'],
+        'kontab_api_key_id' => ['nullable', 'string', 'max:120'],
+        'kontab_api_secret' => ['nullable', 'string', 'max:255'],
     ];
 }
 

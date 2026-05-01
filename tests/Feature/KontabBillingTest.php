@@ -149,3 +149,56 @@ it('rechaza webhook con firma inválida', function () {
         'X-Kontab-Signature' => 'sha256=deadbeef',
     ])->assertStatus(401);
 });
+
+it('admin actualiza doctor con credenciales kontab desde el modal', function () {
+    $admin = User::factory()->create();
+    $admin->assignRole('admin');
+    $admin->givePermissionTo(\Spatie\Permission\Models\Permission::firstOrCreate(['name' => 'manage doctors', 'guard_name' => 'web']));
+
+    $doctor = Doctor::create([
+        'rnc' => '999888777',
+        'full_name' => 'Dr Existente',
+        'email' => 'doc@test.com',
+        'e_invoicing_enabled' => false,
+    ]);
+
+    $this->actingAs($admin)->patch("/doctors/{$doctor->id}", [
+        'rnc' => '999888777',
+        'full_name' => 'Dr Existente',
+        'e_invoicing_enabled' => '1',
+        'kontab_api_key_id' => 'kt_admin_key',
+        'kontab_api_secret' => 'sk_admin_secret',
+    ])->assertRedirect();
+
+    $doctor->refresh();
+    expect($doctor->e_invoicing_enabled)->toBeTrue();
+    expect($doctor->kontab_api_key_id)->toBe('kt_admin_key');
+    expect(Crypt::decryptString($doctor->kontab_api_secret_encrypted))->toBe('sk_admin_secret');
+});
+
+it('mantiene el secret existente si el admin guarda con campo secret vacío', function () {
+    $admin = User::factory()->create();
+    $admin->assignRole('admin');
+
+    $original = Crypt::encryptString('original_secret');
+    $doctor = Doctor::create([
+        'rnc' => '111222333',
+        'full_name' => 'Dr Persistente',
+        'email' => 'persist@test.com',
+        'e_invoicing_enabled' => true,
+        'kontab_api_key_id' => 'kt_old',
+        'kontab_api_secret_encrypted' => $original,
+    ]);
+
+    $this->actingAs($admin)->patch("/doctors/{$doctor->id}", [
+        'rnc' => '111222333',
+        'full_name' => 'Dr Persistente',
+        'e_invoicing_enabled' => '1',
+        'kontab_api_key_id' => 'kt_new', // cambia key
+        // secret vacío → mantener
+    ])->assertRedirect();
+
+    $doctor->refresh();
+    expect($doctor->kontab_api_key_id)->toBe('kt_new');
+    expect(Crypt::decryptString($doctor->kontab_api_secret_encrypted))->toBe('original_secret');
+});

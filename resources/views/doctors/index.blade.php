@@ -83,6 +83,9 @@
                                                 institution: @js($d->institution),
                                                 phone: @js($d->phone),
                                                 email: @js($d->email),
+                                                e_invoicing_enabled: @js((bool) $d->e_invoicing_enabled),
+                                                kontab_api_key_id: @js($d->kontab_api_key_id),
+                                                kontab_has_secret: @js(filled($d->kontab_api_secret_encrypted)),
                                                 insurers_pivot: @js($d->insurers->filter(fn($i) => filled($i->pivot->doctor_code))->mapWithKeys(fn($i) => [(string) $i->id => $i->pivot->doctor_code])),
                                                 ncf: @js(
                                                     $d->ncfAuthorizations
@@ -270,6 +273,14 @@
                                     @click="tab='ncf'">
                                     Comprobantes Fiscales
                                 </button>
+
+                                <button type="button" class="flex-1 px-4 py-2 text-sm font-medium"
+                                    :class="tab === 'einvoice'
+                                        ? 'bg-gray-700 text-white'
+                                        : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700/30'"
+                                    @click="tab='einvoice'">
+                                    Facturación e-CF
+                                </button>
                             </div>
                         </div>
 
@@ -380,6 +391,55 @@
                             </div>
                         </div>
 
+                        <!-- TAB FACTURACIÓN ELECTRÓNICA (kontab-erp) -->
+                        <div class="mt-4" x-show="tab==='einvoice'">
+                            <div class="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">
+                                Facturación electrónica (kontab-erp)
+                            </div>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">
+                                Si está activo, las facturas a ARS de este médico se enviarán a kontab-erp para emitir e-CF y enviar a DGII automáticamente. Si está inactivo, se asignan los NCF locales como hasta ahora.
+                            </p>
+
+                            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
+                                <label class="flex items-center gap-3">
+                                    <input type="hidden" name="e_invoicing_enabled" value="0">
+                                    <input type="checkbox" name="e_invoicing_enabled" value="1"
+                                        x-model="form.e_invoicing_enabled"
+                                        class="rounded border-gray-300 dark:border-gray-700">
+                                    <span class="text-sm font-medium text-gray-800 dark:text-gray-100">Activar facturación electrónica para este médico</span>
+                                </label>
+
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4" :class="!form.e_invoicing_enabled ? 'opacity-60' : ''">
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-700 dark:text-gray-200 mb-1">Kontab API Key ID</label>
+                                        <input type="text" name="kontab_api_key_id" x-model="form.kontab_api_key_id"
+                                            placeholder="kt_live_..."
+                                            class="w-full rounded-lg border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 font-mono text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-700 dark:text-gray-200 mb-1">Kontab API Secret</label>
+                                        <input type="password" name="kontab_api_secret" autocomplete="new-password"
+                                            x-model="form.kontab_api_secret"
+                                            :placeholder="form.kontab_has_secret ? '•••••••• (vacío = mantener actual)' : 'sk_...'"
+                                            class="w-full rounded-lg border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 font-mono text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                        <p class="text-xs text-gray-500 mt-1">El secret sólo se muestra una vez al crearlo en kontab.com.do.</p>
+                                    </div>
+                                </div>
+
+                                <div class="flex items-center gap-3 pt-2 border-t border-gray-100 dark:border-gray-700">
+                                    <button type="button" @click="testKontabConnection()"
+                                        :disabled="!form.id || !form.kontab_api_key_id || !form.kontab_api_secret"
+                                        class="rounded-lg border border-indigo-300 px-3 py-2 text-sm text-indigo-700 hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed">
+                                        Probar conexión
+                                    </button>
+                                    <span class="text-xs" :class="kontabTestClass" x-text="kontabTestMsg"></span>
+                                </div>
+                                <p class="text-xs text-gray-500" x-show="!form.id">
+                                    Guarda el médico primero para poder probar la conexión.
+                                </p>
+                            </div>
+                        </div>
+
                         <!-- FOOTER -->
                         <div class="mt-6 flex items-center justify-end gap-3 border-t border-gray-200 dark:border-gray-700 pt-4">
                             <button type="button"
@@ -435,8 +495,41 @@
                         institution: '',
                         phone: '',
                         email: '',
+                        e_invoicing_enabled: false,
+                        kontab_api_key_id: '',
+                        kontab_api_secret: '',
+                        kontab_has_secret: false,
                         insurers: {},
                         ncf: {}
+                    },
+
+                    kontabTestMsg: '',
+                    kontabTestClass: 'text-gray-500',
+
+                    async testKontabConnection() {
+                        if (!this.form.id) return;
+                        this.kontabTestMsg = 'Probando…';
+                        this.kontabTestClass = 'text-gray-500';
+                        try {
+                            const res = await fetch(`/doctors/${this.form.id}/test-kontab`, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                                    'Accept': 'application/json',
+                                },
+                                body: JSON.stringify({
+                                    kontab_api_key_id: this.form.kontab_api_key_id,
+                                    kontab_api_secret: this.form.kontab_api_secret,
+                                }),
+                            });
+                            const data = await res.json();
+                            this.kontabTestMsg = (data.ok ? '✓ ' : '✗ ') + data.message;
+                            this.kontabTestClass = data.ok ? 'text-green-700' : 'text-red-700';
+                        } catch (e) {
+                            this.kontabTestMsg = '✗ Error: ' + e.message;
+                            this.kontabTestClass = 'text-red-700';
+                        }
                     },
 
                     // ✅ actions para forms externos
@@ -482,9 +575,14 @@
                             institution: '',
                             phone: '',
                             email: '',
+                            e_invoicing_enabled: false,
+                            kontab_api_key_id: '',
+                            kontab_api_secret: '',
+                            kontab_has_secret: false,
                             insurers: {},
                             ncf: {}
                         };
+                        this.kontabTestMsg = '';
                         this.initNcfStructure();
                         this.modalOpen = true;
                     },
@@ -502,10 +600,14 @@
                             institution: item.institution ?? '',
                             phone: item.phone ?? '',
                             email: item.email ?? '',
+                            e_invoicing_enabled: item.e_invoicing_enabled ?? false,
+                            kontab_api_key_id: item.kontab_api_key_id ?? '',
+                            kontab_api_secret: '',
+                            kontab_has_secret: item.kontab_has_secret ?? false,
                             insurers: item.insurers_pivot ?? {},
                             ncf: item.ncf ?? {}
                         };
-
+                        this.kontabTestMsg = '';
                         this.initNcfStructure();
                         this.modalOpen = true;
                     },
