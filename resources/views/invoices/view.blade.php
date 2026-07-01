@@ -25,6 +25,22 @@
 
                 @endhasanyrole
 
+                {{-- Reenviar a kontab-erp: solo médicos electrónicos, factura no anulada y
+                     que aún no se creó en kontab (sin kontab_invoice_id). --}}
+                @hasanyrole('admin|analista')
+                    @if ($invoice->doctor?->e_invoicing_enabled && $invoice->status !== 'void' && ! $invoice->kontab_invoice_id)
+                        <form action="{{ route('invoices.resend-kontab', $invoice) }}" method="POST"
+                            onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').innerText='Reenviando…';">
+                            @csrf
+                            <button type="submit"
+                                class="rounded-lg bg-amber-600 px-4 py-2 text-white font-medium hover:bg-amber-700"
+                                title="Reenviar esta factura a kontab-erp para emitir el e-CF">
+                                Reenviar a Kontab
+                            </button>
+                        </form>
+                    @endif
+                @endhasanyrole
+
                 <a href="{{ route('invoices.pdf', $invoice) }}"
                 target="_blank"
                     class="rounded-lg bg-green-600 px-4 py-2 text-white font-medium hover:bg-green-700">

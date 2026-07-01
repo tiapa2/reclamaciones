@@ -65,6 +65,10 @@ Route::patch('/doctors/{doctor}/user/reset-password', [DoctorController::class, 
     Route::get('invoices/{invoice}/view', [InvoiceController::class, 'view'])
         ->name('invoices.view');
 
+    // Reenviar a kontab-erp una factura electrónica que no se creó allá.
+    Route::post('invoices/{invoice}/resend-kontab', [InvoiceController::class, 'resendToKontab'])
+        ->name('invoices.resend-kontab');
+
     Route::patch('invoices/{invoice}/void', [InvoiceController::class, 'void'])
         ->name('invoices.void');
 

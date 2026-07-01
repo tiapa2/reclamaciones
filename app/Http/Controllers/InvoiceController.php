@@ -9,11 +9,11 @@ use App\Models\Insurer;
 use App\Models\Invoice;
 use App\Models\NcfType;
 use App\Services\KontabClient;
+use App\Support\DoctorScope;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Barryvdh\DomPDF\Facade\Pdf;
-use App\Support\DoctorScope;
 
 class InvoiceController extends Controller
 {
@@ -23,31 +23,31 @@ class InvoiceController extends Controller
     {
         $doctorId = $this->scopedDoctorId();
 
-        $q = Invoice::query()->with(['doctor','insurer','ncfType']);
+        $q = Invoice::query()->with(['doctor', 'insurer', 'ncfType']);
 
         if ($doctorId) {
             $q->where('doctor_id', $doctorId);
-             $invoices = $q->orderByDesc('id')->paginate(10)->withQueryString();
+            $invoices = $q->orderByDesc('id')->paginate(10)->withQueryString();
 
-        // IMPORTANT: en doctor_id select, si es doctor, no debería poder elegir otro doctor
-        // así que en vista, ocultas el selector de doctor o lo fijas al suyo.
+            // IMPORTANT: en doctor_id select, si es doctor, no debería poder elegir otro doctor
+            // así que en vista, ocultas el selector de doctor o lo fijas al suyo.
 
-        return view('invoices.index', compact('invoices'));
-        }else{
+            return view('invoices.index', compact('invoices'));
+        } else {
             $doctors = Doctor::orderBy('full_name')->get(['id', 'full_name']);
-        $insurers = Insurer::orderBy('name')->get(['id', 'name']);
-        $ncfTypes = NcfType::where('active', true)->orderBy('id')->get(['id', 'name', 'prefix']);
+            $insurers = Insurer::orderBy('name')->get(['id', 'name']);
+            $ncfTypes = NcfType::where('active', true)->orderBy('id')->get(['id', 'name', 'prefix']);
 
-        // Si quieres listar facturas debajo (opcional)
-        $invoices = Invoice::with(['doctor', 'insurer', 'ncfType'])
-            ->orderByDesc('id')
-            ->paginate(10)
-            ->withQueryString();
+            // Si quieres listar facturas debajo (opcional)
+            $invoices = Invoice::with(['doctor', 'insurer', 'ncfType'])
+                ->orderByDesc('id')
+                ->paginate(10)
+                ->withQueryString();
 
-        return view('invoices.index', compact('doctors', 'insurers', 'ncfTypes', 'invoices'));
+            return view('invoices.index', compact('doctors', 'insurers', 'ncfTypes', 'invoices'));
         }
         // Para el formulario (selects)
-        
+
     }
 
     public function store(StoreInvoiceRequest $request)
@@ -170,6 +170,59 @@ class InvoiceController extends Controller
         return redirect()->route('invoices.index')->with('success', 'Factura creada correctamente.');
     }
 
+    /**
+     * Reenvía a kontab-erp una factura de un médico electrónico que NO se creó allá
+     * (kontab_invoice_id vacío), típicamente porque el primer intento falló.
+     * No duplica: si ya tiene kontab_invoice_id, no reenvía.
+     */
+    public function resendToKontab(Invoice $invoice)
+    {
+        $invoice->loadMissing(['doctor', 'insurer', 'items', 'ncfType']);
+        $doctor = $invoice->doctor;
+
+        if (! $doctor || ! $doctor->e_invoicing_enabled) {
+            return back()->with('warning', 'El médico de esta factura no es facturador electrónico.');
+        }
+        if ($invoice->kontab_invoice_id) {
+            return back()->with('warning', "La factura ya existe en kontab-erp (ID {$invoice->kontab_invoice_id}). No se reenvía para evitar duplicados.");
+        }
+        if ($invoice->status === 'void') {
+            return back()->with('warning', 'No se puede reenviar una factura anulada.');
+        }
+
+        try {
+            $client = new KontabClient($doctor);
+            $contactId = $client->upsertContactForInsurer($invoice->insurer);
+            $resp = $client->createSalesInvoice($invoice, $contactId);
+
+            $invoice->update([
+                'kontab_contact_id' => $contactId,
+                'kontab_invoice_id' => $resp['id'],
+                'kontab_ncf' => $resp['ncf'],
+                'kontab_track_id' => $resp['track_id'],
+                'kontab_security_code' => $resp['security_code'],
+                'kontab_dgii_status' => $resp['dgii_status'] ?? 'pending',
+                'kontab_dgii_response' => $resp['raw'] ?? null,
+                'kontab_dgii_response_at' => now(),
+                'ncf_number' => $resp['ncf'] ?: $invoice->ncf_number,
+            ]);
+
+            Log::info('Factura reenviada a kontab-erp', [
+                'invoice_id' => $invoice->id,
+                'kontab_invoice_id' => $resp['id'],
+                'ncf' => $resp['ncf'],
+            ]);
+
+            return back()->with('success', "Factura reenviada a kontab-erp. e-NCF: {$resp['ncf']} · DGII: {$resp['dgii_status']}.");
+        } catch (\Throwable $e) {
+            Log::error('Falló reenvío a kontab-erp', [
+                'invoice_id' => $invoice->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return back()->with('warning', "No se pudo reenviar a kontab-erp: {$e->getMessage()}");
+        }
+    }
 
     public function destroy(Invoice $invoice)
     {
@@ -190,7 +243,7 @@ class InvoiceController extends Controller
         $doctorId = (int) $request->query('doctor_id');
         $ncfTypeId = (int) $request->query('ncf_type_id');
 
-        if (!$doctorId || !$ncfTypeId) {
+        if (! $doctorId || ! $ncfTypeId) {
             return response()->json(['ok' => false, 'message' => 'doctor_id y ncf_type_id son requeridos.'], 422);
         }
 
@@ -199,7 +252,7 @@ class InvoiceController extends Controller
             ->where('active', true)
             ->first();
 
-        if (!$auth) {
+        if (! $auth) {
             return response()->json(['ok' => false, 'message' => 'El médico no tiene autorización NCF activa.'], 404);
         }
 
@@ -209,12 +262,12 @@ class InvoiceController extends Controller
 
         $next = (int) ($auth->current_number ?? $auth->from_number);
 
-        if ($next < (int)$auth->from_number || $next > (int)$auth->to_number) {
+        if ($next < (int) $auth->from_number || $next > (int) $auth->to_number) {
             return response()->json(['ok' => false, 'message' => 'No hay NCF disponibles en el rango.'], 422);
         }
 
         $type = NcfType::findOrFail($ncfTypeId);
-        $ncfNumber = $type->prefix . str_pad((string)$next, 8, '0', STR_PAD_LEFT);
+        $ncfNumber = $type->prefix.str_pad((string) $next, 8, '0', STR_PAD_LEFT);
 
         return response()->json([
             'ok' => true,
@@ -227,7 +280,7 @@ class InvoiceController extends Controller
     public function doctorData(Request $request)
     {
         $doctorId = (int) $request->query('doctor_id');
-        if (!$doctorId) {
+        if (! $doctorId) {
             return response()->json(['ok' => false, 'message' => 'doctor_id es requerido.'], 422);
         }
 
@@ -236,16 +289,57 @@ class InvoiceController extends Controller
             $q->orderBy('name');
         }, 'ncfAuthorizations.ncfType'])->findOrFail($doctorId);
 
-        $insurers = $doctor->insurers->map(fn($i) => [
+        $insurers = $doctor->insurers->map(fn ($i) => [
             'id' => $i->id,
             'name' => $i->name,
             'doctor_code' => $i->pivot->doctor_code,
         ])->values();
 
+        // ─── Médico ELECTRÓNICO: el comprobante lo asigna kontab-erp (e-CF).
+        // El selector muestra los tipos e-CF que kontab tiene con secuencia activa
+        // y números disponibles (no las autorizaciones locales B01/B15).
+        if ($doctor->e_invoicing_enabled) {
+            try {
+                $types = (new KontabClient($doctor))->availableEinvoiceTypes();
+            } catch (\Throwable $e) {
+                return response()->json([
+                    'ok' => true,
+                    'insurers' => $insurers,
+                    'ncf_types' => [],
+                    'electronic' => true,
+                    'ncf_warning' => 'No se pudieron cargar los tipos e-CF de kontab-erp: '.$e->getMessage(),
+                ]);
+            }
+
+            $ncfTypes = collect($types)->map(function ($t) {
+                // Mapear a un NcfType local (por prefijo) para conservar el ncf_type_id.
+                // No se consume NCF local: kontab asigna el número real al emitir.
+                $local = NcfType::firstOrCreate(
+                    ['prefix' => $t['code']],
+                    ['name' => $t['name'], 'active' => true],
+                );
+
+                return [
+                    'id' => $local->id,
+                    'name' => $t['name'],
+                    'prefix' => $t['code'],
+                    'remaining' => $t['remaining'],
+                    'next_ncf' => $t['next_ncf'],
+                ];
+            })->values();
+
+            return response()->json([
+                'ok' => true,
+                'insurers' => $insurers,
+                'ncf_types' => $ncfTypes,
+                'electronic' => true,
+            ]);
+        }
+
         $ncfTypes = $doctor->ncfAuthorizations
             ->where('active', true)
-            ->filter(fn($a) => !$a->expires_at || now()->toDateString() <= $a->expires_at->toDateString())
-            ->map(fn($a) => [
+            ->filter(fn ($a) => ! $a->expires_at || now()->toDateString() <= $a->expires_at->toDateString())
+            ->map(fn ($a) => [
                 'id' => $a->ncfType->id,
                 'name' => $a->ncfType->name,
                 'prefix' => $a->ncfType->prefix,
@@ -257,153 +351,152 @@ class InvoiceController extends Controller
             'ok' => true,
             'insurers' => $insurers,
             'ncf_types' => $ncfTypes,
+            'electronic' => false,
         ]);
     }
 
     public function show(Invoice $invoice)
-{
-    $invoice->load([
-        'doctor',
-        'insurer',
-        'ncfType',
-        'items',
-        'createdBy',
-        'payments' => function ($q) {
-            $q->orderByDesc('payment_date')->orderByDesc('id');
-        },
-    ]);
+    {
+        $invoice->load([
+            'doctor',
+            'insurer',
+            'ncfType',
+            'items',
+            'createdBy',
+            'payments' => function ($q) {
+                $q->orderByDesc('payment_date')->orderByDesc('id');
+            },
+        ]);
 
-    return response()->json([
-        'ok' => true,
-        'invoice' => [
-            'id' => $invoice->id,
-            'ncf_number' => $invoice->ncf_number,
-            'invoice_date' => optional($invoice->invoice_date)->toDateString(),
+        return response()->json([
+            'ok' => true,
+            'invoice' => [
+                'id' => $invoice->id,
+                'ncf_number' => $invoice->ncf_number,
+                'invoice_date' => optional($invoice->invoice_date)->toDateString(),
 
-            'doctor' => $invoice->doctor?->full_name,
-            'insurer' => $invoice->insurer?->name,
-            'ncf_type' => $invoice->ncfType?->name,
+                'doctor' => $invoice->doctor?->full_name,
+                'insurer' => $invoice->insurer?->name,
+                'ncf_type' => $invoice->ncfType?->name,
 
-            // 👇 usa estos nombres para que tu modal no se rompa
-            'total_amount' => (string) $invoice->total_amount,
-            'paid_amount'  => (string) ($invoice->paid_amount ?? 0),
-            'status' => $invoice->status,
-            'payment_status' => $invoice->payment_status ?? 'unpaid',
-            'paid_at' => optional($invoice->paid_at)->toDateTimeString(),
+                // 👇 usa estos nombres para que tu modal no se rompa
+                'total_amount' => (string) $invoice->total_amount,
+                'paid_amount' => (string) ($invoice->paid_amount ?? 0),
+                'status' => $invoice->status,
+                'payment_status' => $invoice->payment_status ?? 'unpaid',
+                'paid_at' => optional($invoice->paid_at)->toDateTimeString(),
 
-            'invoice_type' => $invoice->invoice_type ?? 'ars',
-            'created_by' => $invoice->createdBy?->name,
+                'invoice_type' => $invoice->invoice_type ?? 'ars',
+                'created_by' => $invoice->createdBy?->name,
 
-            'items' => $invoice->items->map(fn($it) => [
-                'id' => $it->id,
-                'service_date' => optional($it->service_date)->toDateString(),
-                'description' => $it->description,
-                'patient_name' => $it->patient_name,
-                'affiliate_no' => $it->affiliate_no,
-                'authorization_no' => $it->authorization_no,
-                'amount' => (string)$it->amount,
-            ])->values(),
+                'items' => $invoice->items->map(fn ($it) => [
+                    'id' => $it->id,
+                    'service_date' => optional($it->service_date)->toDateString(),
+                    'description' => $it->description,
+                    'patient_name' => $it->patient_name,
+                    'affiliate_no' => $it->affiliate_no,
+                    'authorization_no' => $it->authorization_no,
+                    'amount' => (string) $it->amount,
+                ])->values(),
 
-            // 👇 pagos para el modal
-            'payments' => $invoice->payments->map(fn($p) => [
-                'id' => $p->id,
-                'payment_date' => optional($p->payment_date)->toDateString(),
-                'amount' => (string)$p->amount,
-                'method' => $p->method,
-                'reference_no' => $p->reference_no,
-                'notes' => $p->notes,
-            ])->values(),
-        ],
-    ]);
-}
-
-public function view(Invoice $invoice)
-{
-    $invoice->load([
-  'doctor',
-  'insurer',
-  'items' => fn($q) => $q->orderBy('id'),
-  'payments' => fn($q) => $q->orderByDesc('payment_date')->orderByDesc('id'),
-  'reconciliations' => fn($q) => $q->orderByDesc('id'),
-  'reconciliations.items' => fn($q) => $q->orderBy('id'),
-]);
-
-$openRec = $invoice->reconciliations->firstWhere('status','open');
-$history = $invoice->reconciliations->where('status', '!=', 'open')->values(); // closed/canceled
-
-
-    return view('invoices.view', compact('invoice','openRec','history'));
-}
-
-
-public function pdf(Invoice $invoice)
-{
-    $invoice->load(['doctor', 'insurer', 'ncfType', 'items']);
-
-    $pdf = Pdf::loadView('invoices.pdf', compact('invoice'))
-        ->setPaper('letter'); // o 'a4'
-
-    $filename = ($invoice->doctor?->full_name ?? 'Factura') . '.pdf';
-
-    return $pdf->stream($filename);
-}
-public function void(Invoice $invoice)
-{
-    // Si tienes policies:
-    // $this->authorize('void', $invoice);
-
-    if ($invoice->status === 'void') {
-        return back()->with('info', 'Esta factura ya está anulada.');
+                // 👇 pagos para el modal
+                'payments' => $invoice->payments->map(fn ($p) => [
+                    'id' => $p->id,
+                    'payment_date' => optional($p->payment_date)->toDateString(),
+                    'amount' => (string) $p->amount,
+                    'method' => $p->method,
+                    'reference_no' => $p->reference_no,
+                    'notes' => $p->notes,
+                ])->values(),
+            ],
+        ]);
     }
 
-    DB::transaction(function () use ($invoice) {
-        $invoice->update([
-            'status' => 'void',
-            // opcional si tienes columnas:
-            // 'voided_at' => now(),
-            // 'voided_by' => auth()->id(),
+    public function view(Invoice $invoice)
+    {
+        $invoice->load([
+            'doctor',
+            'insurer',
+            'items' => fn ($q) => $q->orderBy('id'),
+            'payments' => fn ($q) => $q->orderByDesc('payment_date')->orderByDesc('id'),
+            'reconciliations' => fn ($q) => $q->orderByDesc('id'),
+            'reconciliations.items' => fn ($q) => $q->orderBy('id'),
         ]);
-    });
 
-    return back()->with('success', 'Factura anulada correctamente.');
-}
-public function search(Request $request)
-{
-    $q = trim((string) $request->query('q', ''));
+        $openRec = $invoice->reconciliations->firstWhere('status', 'open');
+        $history = $invoice->reconciliations->where('status', '!=', 'open')->values(); // closed/canceled
 
-    $query = Invoice::query()
-        ->with(['doctor:id,full_name', 'insurer:id,name', 'factoring:id,invoice_id'])
-        ->where('status', '!=', 'void');
+        return view('invoices.view', compact('invoice', 'openRec', 'history'));
+    }
 
-    if ($q !== '') {
-        $query->where(function ($w) use ($q) {
-            if (ctype_digit($q)) {
-                $w->orWhere('id', (int)$q);
-            }
-            $w->orWhere('ncf_number', 'like', "%{$q}%")
-              ->orWhereHas('doctor', fn($d) => $d->where('full_name', 'like', "%{$q}%"))
-              ->orWhereHas('insurer', fn($i) => $i->where('name', 'like', "%{$q}%"));
+    public function pdf(Invoice $invoice)
+    {
+        $invoice->load(['doctor', 'insurer', 'ncfType', 'items']);
+
+        $pdf = Pdf::loadView('invoices.pdf', compact('invoice'))
+            ->setPaper('letter'); // o 'a4'
+
+        $filename = ($invoice->doctor?->full_name ?? 'Factura').'.pdf';
+
+        return $pdf->stream($filename);
+    }
+
+    public function void(Invoice $invoice)
+    {
+        // Si tienes policies:
+        // $this->authorize('void', $invoice);
+
+        if ($invoice->status === 'void') {
+            return back()->with('info', 'Esta factura ya está anulada.');
+        }
+
+        DB::transaction(function () use ($invoice) {
+            $invoice->update([
+                'status' => 'void',
+                // opcional si tienes columnas:
+                // 'voided_at' => now(),
+                // 'voided_by' => auth()->id(),
+            ]);
         });
+
+        return back()->with('success', 'Factura anulada correctamente.');
     }
 
-    $invoices = $query->orderByDesc('id')
-        ->limit(15)
-        ->get()
-        ->map(fn($inv) => [
-            'id' => $inv->id,
-            'ncf' => $inv->ncf_number,
-            'doctor' => $inv->doctor?->full_name,
-            'insurer' => $inv->insurer?->name,
-            'date' => optional($inv->invoice_date)->toDateString(),
-            'total' => (float) $inv->total_amount,
-            'has_factoring' => (bool) $inv->factoring,
+    public function search(Request $request)
+    {
+        $q = trim((string) $request->query('q', ''));
+
+        $query = Invoice::query()
+            ->with(['doctor:id,full_name', 'insurer:id,name', 'factoring:id,invoice_id'])
+            ->where('status', '!=', 'void');
+
+        if ($q !== '') {
+            $query->where(function ($w) use ($q) {
+                if (ctype_digit($q)) {
+                    $w->orWhere('id', (int) $q);
+                }
+                $w->orWhere('ncf_number', 'like', "%{$q}%")
+                    ->orWhereHas('doctor', fn ($d) => $d->where('full_name', 'like', "%{$q}%"))
+                    ->orWhereHas('insurer', fn ($i) => $i->where('name', 'like', "%{$q}%"));
+            });
+        }
+
+        $invoices = $query->orderByDesc('id')
+            ->limit(15)
+            ->get()
+            ->map(fn ($inv) => [
+                'id' => $inv->id,
+                'ncf' => $inv->ncf_number,
+                'doctor' => $inv->doctor?->full_name,
+                'insurer' => $inv->insurer?->name,
+                'date' => optional($inv->invoice_date)->toDateString(),
+                'total' => (float) $inv->total_amount,
+                'has_factoring' => (bool) $inv->factoring,
+            ]);
+
+        return response()->json([
+            'ok' => true,
+            'invoices' => $invoices,
         ]);
-
-    return response()->json([
-        'ok' => true,
-        'invoices' => $invoices,
-    ]);
-}
-
-
+    }
 }

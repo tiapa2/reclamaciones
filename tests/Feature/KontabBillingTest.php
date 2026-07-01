@@ -225,6 +225,107 @@ it('testConnection firma el REQUEST_URI completo y pega a /ping', function () {
     });
 });
 
+it('reenvía a kontab una factura huérfana mapeando B01 → E31', function () {
+    Http::fake([
+        'kontab.test/api/integration/v1/contacts' => Http::response(['id' => 555], 201),
+        'kontab.test/api/integration/v1/lookups/ncf-types' => Http::response([
+            'data' => [['id' => 42, 'code' => 'E31', 'name' => 'Crédito Fiscal Electrónico']],
+        ], 200),
+        'kontab.test/api/integration/v1/invoices/sales' => Http::response([
+            'id' => 3210, 'ncf' => 'E310000000777', 'track_id' => 'TRK', 'security_code' => 'SEC', 'dgii_status' => 'pending',
+        ], 201),
+    ]);
+
+    $admin = User::factory()->create();
+    $admin->assignRole('admin');
+
+    $doctor = Doctor::create([
+        'rnc' => '121212121', 'full_name' => 'Dr Reenvío', 'email' => 're@test.com',
+        'e_invoicing_enabled' => true,
+        'kontab_api_key_id' => 'kt_test_key', 'kontab_api_secret_encrypted' => Crypt::encryptString('sk_test_secret'),
+    ]);
+    $insurer = Insurer::create(['name' => 'ARS X', 'rnc' => '131313131']);
+    // Factura huérfana: tipo LOCAL B01, sin kontab_invoice_id.
+    $b01 = NcfType::create(['name' => 'Crédito Fiscal', 'prefix' => 'B01', 'active' => true]);
+    $invoice = Invoice::create([
+        'doctor_id' => $doctor->id, 'insurer_id' => $insurer->id, 'ncf_type_id' => $b01->id,
+        'invoice_date' => now(), 'total_amount' => 1000, 'status' => 'issued', 'created_by' => $admin->id,
+        'kontab_invoice_id' => null,
+    ]);
+    $invoice->items()->create(['service_date' => now(), 'patient_name' => 'Z', 'amount' => 1000]);
+
+    $this->actingAs($admin)->post(route('invoices.resend-kontab', $invoice))->assertRedirect();
+
+    $invoice->refresh();
+    expect($invoice->kontab_invoice_id)->toBe(3210);
+    expect($invoice->kontab_ncf)->toBe('E310000000777');
+
+    // B01 debe haberse mapeado a E31 → ncf_type_id 42 en el payload.
+    Http::assertSent(fn ($r) => str_ends_with($r->url(), '/invoices/sales') && $r['ncf_type_id'] === 42);
+});
+
+it('no reenvía si la factura ya está en kontab (anti-duplicado)', function () {
+    Http::fake();
+    $admin = User::factory()->create();
+    $admin->assignRole('admin');
+    $doctor = Doctor::create([
+        'rnc' => '141414141', 'full_name' => 'Dr Dup', 'email' => 'dup@test.com',
+        'e_invoicing_enabled' => true,
+        'kontab_api_key_id' => 'k', 'kontab_api_secret_encrypted' => Crypt::encryptString('s'),
+    ]);
+    $insurer = Insurer::create(['name' => 'ARS Y', 'rnc' => '151515151']);
+    $b01 = NcfType::create(['name' => 'Crédito Fiscal', 'prefix' => 'B01', 'active' => true]);
+    $invoice = Invoice::create([
+        'doctor_id' => $doctor->id, 'insurer_id' => $insurer->id, 'ncf_type_id' => $b01->id,
+        'invoice_date' => now(), 'total_amount' => 500, 'status' => 'issued', 'created_by' => $admin->id,
+        'kontab_invoice_id' => 999, // ya está en kontab
+    ]);
+
+    $this->actingAs($admin)->post(route('invoices.resend-kontab', $invoice))->assertRedirect();
+    Http::assertNothingSent();
+    expect($invoice->fresh()->kontab_invoice_id)->toBe(999);
+});
+
+it('doctor-data devuelve tipos e-CF de kontab cuando el médico es electrónico', function () {
+    Http::fake([
+        'kontab.test/api/integration/v1/lookups/ncf-availability' => Http::response([
+            'data' => [
+                // Activa con disponibles → debe aparecer
+                ['ncf_code' => 'E31', 'ncf_name' => 'Crédito Fiscal Electrónico', 'current_number' => 5000, 'range_from' => 5000, 'range_to' => 6000, 'remaining' => 1001, 'is_active' => true],
+                // Sin disponibles → se filtra
+                ['ncf_code' => 'E32', 'ncf_name' => 'Consumo', 'current_number' => 10, 'range_from' => 1, 'range_to' => 9, 'remaining' => 0, 'is_active' => true],
+                // No electrónico → se filtra
+                ['ncf_code' => 'B01', 'ncf_name' => 'Crédito Fiscal', 'current_number' => 1, 'range_from' => 1, 'range_to' => 100, 'remaining' => 100, 'is_active' => true],
+            ],
+        ], 200),
+    ]);
+
+    $admin = User::factory()->create();
+    $admin->assignRole('admin');
+
+    $doctor = Doctor::create([
+        'rnc' => '888777666',
+        'full_name' => 'Dr e-CF',
+        'email' => 'ecf@test.com',
+        'e_invoicing_enabled' => true,
+        'kontab_api_key_id' => 'kt_test_key',
+        'kontab_api_secret_encrypted' => Crypt::encryptString('sk_test_secret'),
+    ]);
+
+    $res = $this->actingAs($admin)->getJson(route('invoices.doctor-data', ['doctor_id' => $doctor->id]));
+
+    $res->assertOk();
+    expect($res->json('electronic'))->toBeTrue();
+    $types = $res->json('ncf_types');
+    // Solo E31 (E32 sin disponibles, B01 no electrónico)
+    expect($types)->toHaveCount(1);
+    expect($types[0]['prefix'])->toBe('E31');
+    expect($types[0]['remaining'])->toBe(1001);
+    expect($types[0]['next_ncf'])->toBe('E310000005000');
+    // Debe existir el NcfType local mapeado por prefijo
+    expect(NcfType::where('prefix', 'E31')->exists())->toBeTrue();
+});
+
 it('mantiene el secret existente si el admin guarda con campo secret vacío', function () {
     $admin = User::factory()->create();
     $admin->assignRole('admin');

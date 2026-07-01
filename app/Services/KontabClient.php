@@ -100,7 +100,7 @@ class KontabClient
         // kontab-erp exige un tipo de NCF para poder contabilizar y emitir el e-CF.
         // Resolvemos el id del tipo en kontab-erp a partir del código DGII (E31, E32…)
         // que ya trae la factura local; ambos sistemas usan los códigos estándar.
-        $ncfCode = $invoice->ncfType?->prefix;
+        $ncfCode = $this->toElectronicCode((string) $invoice->ncfType?->prefix);
         if (! $ncfCode) {
             throw new RuntimeException('La factura no tiene un tipo de NCF configurado para facturación electrónica.');
         }
@@ -143,12 +143,63 @@ class KontabClient
     }
 
     /**
+     * Traduce un código de NCF local (papel, B0x/B1x) a su equivalente e-CF de DGII.
+     * Para facturación electrónica el comprobante SIEMPRE es electrónico; si la
+     * factura trae un tipo local (facturas antiguas o formulario viejo), lo mapeamos.
+     * Si ya es un código E-*, se devuelve tal cual.
+     */
+    private function toElectronicCode(string $code): string
+    {
+        $code = strtoupper(trim($code));
+        if ($code === '' || str_starts_with($code, 'E')) {
+            return $code;
+        }
+
+        return [
+            'B01' => 'E31', // Crédito Fiscal
+            'B02' => 'E32', // Consumo
+            'B14' => 'E44', // Régimen Especial
+            'B15' => 'E45', // Gubernamental
+            'B16' => 'E46', // Exportaciones
+        ][$code] ?? $code;
+    }
+
+    /**
      * Resuelve el id del tipo de NCF en kontab-erp a partir de su código DGII
      * (E31, E32, E44…). Cachea el catálogo por instancia para no repetir la llamada.
      *
      * @var array<string,int>|null
      */
     private ?array $ncfTypeCache = null;
+
+    /**
+     * Tipos de comprobante ELECTRÓNICO (e-CF) que la empresa tiene disponibles en
+     * kontab-erp: solo secuencias activas, con números restantes y código E-* .
+     * Se usa para poblar el selector de "Tipo NCF" cuando el médico es electrónico.
+     *
+     * @return array<int,array{code:string,name:string,remaining:int,next_ncf:string}>
+     */
+    public function availableEinvoiceTypes(): array
+    {
+        $res = $this->request('GET', '/lookups/ncf-availability');
+        $this->throwIfFailed($res, 'listar disponibilidad e-NCF');
+
+        $rows = $res->json('data') ?? $res->json() ?? [];
+
+        return collect($rows)
+            ->filter(fn ($r) => ($r['is_active'] ?? false)
+                && (int) ($r['remaining'] ?? 0) > 0
+                && str_starts_with(strtoupper((string) ($r['ncf_code'] ?? '')), 'E'))
+            ->map(fn ($r) => [
+                'code' => strtoupper($r['ncf_code']),
+                'name' => $r['ncf_name'] ?? $r['ncf_code'],
+                'remaining' => (int) $r['remaining'],
+                // e-NCF = prefijo (E31) + 10 dígitos de secuencia.
+                'next_ncf' => strtoupper($r['ncf_code']).str_pad((string) ($r['current_number'] ?? 0), 10, '0', STR_PAD_LEFT),
+            ])
+            ->values()
+            ->all();
+    }
 
     private function resolveNcfTypeId(string $code): ?int
     {

@@ -65,7 +65,8 @@
                                 class="w-full rounded-lg border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100">
                                 <option value="">Seleccione tipo</option>
                                 <template x-for="t in ncfTypes" :key="t.id">
-                                    <option :value="t.id" x-text="`${t.name} (${t.prefix})`"></option>
+                                    <option :value="t.id"
+                                        x-text="t.remaining !== undefined ? `${t.name} (${t.prefix}) · ${t.remaining} disp.` : `${t.name} (${t.prefix})`"></option>
                                 </template>
                             </select>
                         </div>
@@ -356,6 +357,15 @@
                     this.previewError = '';
 
                     if (!this.form.doctor_id || !this.form.ncf_type_id) return;
+
+                    // Médico electrónico: el número lo asigna kontab-erp al emitir.
+                    // Mostramos el próximo e-NCF proyectado (next_ncf) que vino del selector,
+                    // sin consultar la autorización local (que no aplica).
+                    const t = this.ncfTypes.find(x => String(x.id) === String(this.form.ncf_type_id));
+                    if (t && t.next_ncf) {
+                        this.ncfPreview = t.next_ncf + ' (lo asigna Kontab)';
+                        return;
+                    }
 
                     const url =
                         `{{ route('invoices.preview-ncf') }}?doctor_id=${this.form.doctor_id}&ncf_type_id=${this.form.ncf_type_id}`;
