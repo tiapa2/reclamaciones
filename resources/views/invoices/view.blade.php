@@ -124,15 +124,10 @@
                         <div class="mt-2 text-sm text-gray-800 dark:text-gray-200 space-y-1">
                             <div><span class="font-semibold">NCF:</span> {{ $invoice->kontab_ncf ?? $invoice->ncf_number ?: '-' }}</div>
 
-                            @if ($invoice->kontab_invoice_id)
-                                <div><span class="font-semibold">DGII:</span>
-                                    <span class="uppercase">{{ $invoice->kontab_dgii_status ?? 'pendiente' }}</span>
-                                </div>
-                                @if ($invoice->kontab_security_code)
-                                    <div><span class="font-semibold">Código Seguridad:</span> {{ $invoice->kontab_security_code }}</div>
-                                @endif
-                            @else
-                                <div><span class="font-semibold">Válido Hasta:</span> -</div>
+                            <div><span class="font-semibold">Válido Hasta:</span>
+                                {{ $invoice->kontab_valid_until ?? '-' }}</div>
+                            @if ($invoice->kontab_invoice_id && $invoice->kontab_security_code)
+                                <div><span class="font-semibold">Código Seguridad:</span> {{ $invoice->kontab_security_code }}</div>
                             @endif
 
                             <div><span class="font-semibold">Factura No.:</span> {{ $invoiceNo }}</div>

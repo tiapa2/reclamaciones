@@ -130,6 +130,7 @@ it('webhook DGII accepted actualiza el status', function () {
                 'qr_url' => 'https://ecf.dgii.gov.do/testecf/consultatimbre?...&fechafirma=01-07-2026%2018:55:41',
                 'qr_svg_base64' => 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=',
                 'fecha_firma' => '01-07-2026 18:55:41',
+                'valid_until' => '2028-12-31',
             ],
         ], 200),
     ]);
@@ -166,6 +167,7 @@ it('webhook DGII accepted actualiza el status', function () {
     expect($invoice->kontab_security_code)->toBe('AbC123');
     expect($invoice->kontab_qr_svg)->toStartWith('data:image/svg+xml;base64,');
     expect($invoice->kontab_fecha_firma)->toBe('01-07-2026 18:55:41');
+    expect($invoice->kontab_valid_until)->toBe('2028-12-31');
 });
 
 it('rechaza webhook con firma inválida', function () {

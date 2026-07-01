@@ -28,6 +28,7 @@ class Invoice extends Model
         'kontab_qr_svg',
         'kontab_qr_url',
         'kontab_fecha_firma',
+        'kontab_valid_until',
         'kontab_dgii_status',
         'kontab_dgii_response_at',
         'kontab_dgii_response',
@@ -69,6 +70,7 @@ class Invoice extends Model
                 'kontab_qr_svg' => $s['qr_svg_base64'] ?: $this->kontab_qr_svg,
                 'kontab_qr_url' => $s['qr_url'] ?: $this->kontab_qr_url,
                 'kontab_fecha_firma' => $s['fecha_firma'] ?: $this->kontab_fecha_firma,
+                'kontab_valid_until' => $s['valid_until'] ?: $this->kontab_valid_until,
             ]);
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::warning("No se pudo sincronizar e-CF de kontab para factura {$this->id}: {$e->getMessage()}");

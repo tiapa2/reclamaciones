@@ -192,6 +192,7 @@ class KontabClient
             'qr_url' => $d['qr_url'] ?? null,
             'qr_svg_base64' => $d['qr_svg_base64'] ?? null,
             'fecha_firma' => $d['fecha_firma'] ?? null,
+            'valid_until' => $d['valid_until'] ?? null,
         ];
     }
 

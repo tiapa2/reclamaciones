@@ -153,11 +153,7 @@
       <div class="doc-title">Factura Crédito Fiscal</div>
 
       <div class="mb-6"><span class="label">NCF:</span> {{ $invoice->kontab_ncf ?? $invoice->ncf_number ?: '-' }}</div>
-      @if ($invoice->kontab_invoice_id)
-        <div class="mb-6"><span class="label">DGII:</span> {{ strtoupper($invoice->kontab_dgii_status ?? 'pendiente') }}</div>
-      @else
-        <div class="mb-6"><span class="label">Válido Hasta:</span> {{ $validUntil }}</div>
-      @endif
+      <div class="mb-6"><span class="label">Válido Hasta:</span> {{ $invoice->kontab_valid_until ?? $validUntil }}</div>
       <div class="mb-6"><span class="label">Factura No.:</span> {{ $invoiceNo }}</div>
       <div class="mb-6">
   <span class="label">Fecha:</span> 
