@@ -63,6 +63,12 @@ it('genera NCF local cuando el doctor no tiene facturación electrónica activa'
 it('envía a kontab-erp cuando el doctor tiene facturación electrónica y bloquea edición', function () {
     Http::fake([
         'kontab.test/api/integration/v1/contacts' => Http::response(['id' => 555], 201),
+        'kontab.test/api/integration/v1/lookups/ncf-types' => Http::response([
+            'data' => [
+                ['id' => 41, 'code' => 'E32', 'name' => 'Consumo Electrónico'],
+                ['id' => 42, 'code' => 'E31', 'name' => 'Crédito Fiscal Electrónico'],
+            ],
+        ], 200),
         'kontab.test/api/integration/v1/invoices/sales' => Http::response([
             'id' => 9999,
             'ncf' => 'E310000000123',
@@ -100,6 +106,12 @@ it('envía a kontab-erp cuando el doctor tiene facturación electrónica y bloqu
     expect($invoice->kontab_ncf)->toBe('E310000000123');
     expect($invoice->kontab_dgii_status)->toBe('pending');
     expect($invoice->isLocked())->toBeTrue();
+
+    // Debe resolver el ncf_type_id de kontab (E31 → 42) y enviarlo en el payload.
+    Http::assertSent(function ($request) {
+        return str_ends_with($request->url(), '/invoices/sales')
+            && $request['ncf_type_id'] === 42;
+    });
 
     // Intentar destroy → 403
     $this->actingAs($admin)->delete("/invoices/{$invoice->id}")
@@ -174,6 +186,43 @@ it('admin actualiza doctor con credenciales kontab desde el modal', function () 
     expect($doctor->e_invoicing_enabled)->toBeTrue();
     expect($doctor->kontab_api_key_id)->toBe('kt_admin_key');
     expect(Crypt::decryptString($doctor->kontab_api_secret_encrypted))->toBe('sk_admin_secret');
+});
+
+it('testConnection firma el REQUEST_URI completo y pega a /ping', function () {
+    Http::fake([
+        'kontab.test/api/integration/v1/ping' => Http::response(['success' => true, 'data' => ['pong' => true]], 200),
+    ]);
+
+    $secret = 'sk_test_secret';
+    $doctor = Doctor::create([
+        'rnc' => '777666555',
+        'full_name' => 'Dr Ping',
+        'email' => 'ping@test.com',
+        'e_invoicing_enabled' => true,
+        'kontab_api_key_id' => 'kt_test_key',
+        'kontab_api_secret_encrypted' => Crypt::encryptString($secret),
+    ]);
+
+    $ok = (new KontabClient($doctor))->testConnection();
+    expect($ok)->toBeTrue();
+
+    Http::assertSent(function ($request) use ($secret) {
+        // Debe pegar al endpoint /ping con el prefijo completo
+        if ($request->url() !== 'https://kontab.test/api/integration/v1/ping') {
+            return false;
+        }
+        // La firma debe cubrir el REQUEST_URI completo (con /api/integration/v1),
+        // no el path relativo — es exactamente lo que valida kontab-erp.
+        $ts = $request->header('X-Api-Timestamp')[0];
+        $expected = hash_hmac(
+            'sha256',
+            "{$ts}\nGET\n/api/integration/v1/ping\n".hash('sha256', ''),
+            $secret,
+        );
+
+        return $request->header('X-Api-Signature')[0] === $expected
+            && $request->header('X-Api-Key')[0] === 'kt_test_key';
+    });
 });
 
 it('mantiene el secret existente si el admin guarda con campo secret vacío', function () {

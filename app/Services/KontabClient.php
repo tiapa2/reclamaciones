@@ -17,13 +17,19 @@ use RuntimeException;
  *
  * Endpoints consumidos:
  *   POST /contacts                 → upsert ARS como contacto (cacheado vía pivot)
+ *   GET  /lookups/ncf-types        → resolver el ncf_type_id por código DGII
  *   POST /invoices/sales           → crea factura + posta + envía a DGII
- *   GET  /lookups/health           → smoke test para "Probar conexión"
+ *   GET  /ping                     → smoke test para "Probar conexión"
+ *
+ * Scopes requeridos en la credencial: contacts:write, lookups:read,
+ * invoices.sales:write y dgii:send.
  */
 class KontabClient
 {
     private string $baseUrl;
+
     private string $apiKeyId;
+
     private string $apiSecret;
 
     public function __construct(private Doctor $doctor)
@@ -40,7 +46,9 @@ class KontabClient
     /** Validación rápida de credenciales — usado por el botón "Probar conexión". */
     public function testConnection(): bool
     {
-        $res = $this->request('GET', '/lookups/health');
+        // /ping es el smoke-test autenticado de kontab-erp (no requiere scope):
+        // confirma que la firma HMAC, la credencial y la conexión funcionan.
+        $res = $this->request('GET', '/ping');
 
         return $res->successful();
     }
@@ -89,8 +97,21 @@ class KontabClient
     {
         $invoice->loadMissing(['items', 'ncfType']);
 
+        // kontab-erp exige un tipo de NCF para poder contabilizar y emitir el e-CF.
+        // Resolvemos el id del tipo en kontab-erp a partir del código DGII (E31, E32…)
+        // que ya trae la factura local; ambos sistemas usan los códigos estándar.
+        $ncfCode = $invoice->ncfType?->prefix;
+        if (! $ncfCode) {
+            throw new RuntimeException('La factura no tiene un tipo de NCF configurado para facturación electrónica.');
+        }
+        $kontabNcfTypeId = $this->resolveNcfTypeId($ncfCode);
+        if (! $kontabNcfTypeId) {
+            throw new RuntimeException("kontab-erp no tiene configurado el tipo de NCF «{$ncfCode}» para esta empresa.");
+        }
+
         $payload = [
             'contact_id' => $kontabContactId,
+            'ncf_type_id' => $kontabNcfTypeId,
             'date' => $invoice->invoice_date->toDateString(),
             'income_type' => '02', // Servicios médicos
             'auto_post' => true,
@@ -121,6 +142,32 @@ class KontabClient
         ];
     }
 
+    /**
+     * Resuelve el id del tipo de NCF en kontab-erp a partir de su código DGII
+     * (E31, E32, E44…). Cachea el catálogo por instancia para no repetir la llamada.
+     *
+     * @var array<string,int>|null
+     */
+    private ?array $ncfTypeCache = null;
+
+    private function resolveNcfTypeId(string $code): ?int
+    {
+        if ($this->ncfTypeCache === null) {
+            $res = $this->request('GET', '/lookups/ncf-types');
+            $this->throwIfFailed($res, 'listar tipos de NCF');
+
+            $rows = $res->json('data') ?? $res->json() ?? [];
+            $this->ncfTypeCache = [];
+            foreach ($rows as $row) {
+                if (isset($row['code'], $row['id'])) {
+                    $this->ncfTypeCache[strtoupper($row['code'])] = (int) $row['id'];
+                }
+            }
+        }
+
+        return $this->ncfTypeCache[strtoupper($code)] ?? null;
+    }
+
     private function buildInvoiceNotes(Invoice $invoice): string
     {
         $parts = ["Factura emitida desde Kontab Reclamaciones (#{$invoice->id})"];
@@ -138,7 +185,12 @@ class KontabClient
      * Petición HTTP firmada HMAC. Headers:
      *   X-Api-Key       — id de la credencial
      *   X-Api-Timestamp — unix seconds
-     *   X-Api-Signature — hex(HMAC-SHA256(secret, ts + "\n" + METHOD + "\n" + uri + "\n" + sha256(body))))
+     *   X-Api-Signature — hex(HMAC-SHA256(secret, ts + "\n" + METHOD + "\n" + REQUEST_URI + "\n" + sha256(body))))
+     *
+     * REQUEST_URI debe ser el path COMPLETO tal como lo recibe kontab-erp
+     * (incluye el prefijo /api/integration/v1 y el query string), NO el path
+     * relativo. kontab-erp valida contra $request->getRequestUri(); si firmamos
+     * solo el path relativo la firma no coincide y responde 401 invalid_signature.
      */
     private function request(string $method, string $path, array $body = [])
     {
@@ -146,7 +198,12 @@ class KontabClient
         $rawBody = $body ? json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : '';
         $ts = (string) time();
         $bodyHash = hash('sha256', $rawBody);
-        $stringToSign = "{$ts}\n".strtoupper($method)."\n{$path}\n{$bodyHash}";
+
+        $urlParts = parse_url($url);
+        $requestUri = ($urlParts['path'] ?? $path)
+            .(isset($urlParts['query']) ? '?'.$urlParts['query'] : '');
+
+        $stringToSign = "{$ts}\n".strtoupper($method)."\n{$requestUri}\n{$bodyHash}";
         $signature = hash_hmac('sha256', $stringToSign, $this->apiSecret);
 
         return Http::withHeaders([
