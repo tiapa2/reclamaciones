@@ -122,6 +122,18 @@ it('webhook DGII accepted actualiza el status', function () {
     config(['app.cipher' => 'aes-256-cbc']);
     config(['services.kontab.webhook_secret' => 'test-webhook-secret']);
 
+    // Al aceptar, el handler consulta dgii-status para traer QR/código/fecha firma.
+    Http::fake([
+        'kontab.test/api/integration/v1/invoices/sales/*/dgii-status' => Http::response([
+            'data' => [
+                'ncf' => 'E310000007777', 'status' => 'accepted', 'security_code' => 'AbC123',
+                'qr_url' => 'https://ecf.dgii.gov.do/testecf/consultatimbre?...&fechafirma=01-07-2026%2018:55:41',
+                'qr_svg_base64' => 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=',
+                'fecha_firma' => '01-07-2026 18:55:41',
+            ],
+        ], 200),
+    ]);
+
     $doctor = Doctor::create(['rnc' => '5', 'full_name' => 'X', 'email' => 'x@x.com', 'e_invoicing_enabled' => true,
         'kontab_api_key_id' => 'k', 'kontab_api_secret_encrypted' => Crypt::encryptString('s')]);
     $insurer = Insurer::create(['name' => 'ARS', 'rnc' => '6']);
@@ -150,6 +162,10 @@ it('webhook DGII accepted actualiza el status', function () {
     $invoice->refresh();
     expect($invoice->kontab_dgii_status)->toBe('accepted');
     expect($invoice->kontab_track_id)->toBe('CONFIRMED');
+    // La data fiscal del e-CF (QR, código, fecha firma) se trajo de kontab.
+    expect($invoice->kontab_security_code)->toBe('AbC123');
+    expect($invoice->kontab_qr_svg)->toStartWith('data:image/svg+xml;base64,');
+    expect($invoice->kontab_fecha_firma)->toBe('01-07-2026 18:55:41');
 });
 
 it('rechaza webhook con firma inválida', function () {

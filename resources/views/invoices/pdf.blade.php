@@ -152,8 +152,12 @@
     <div class="col-right">
       <div class="doc-title">Factura Crédito Fiscal</div>
 
-      <div class="mb-6"><span class="label">NCF:</span> {{ $invoice->ncf_number }}</div>
-      <div class="mb-6"><span class="label">Válido Hasta:</span> {{ $validUntil }}</div>
+      <div class="mb-6"><span class="label">NCF:</span> {{ $invoice->kontab_ncf ?? $invoice->ncf_number ?: '-' }}</div>
+      @if ($invoice->kontab_invoice_id)
+        <div class="mb-6"><span class="label">DGII:</span> {{ strtoupper($invoice->kontab_dgii_status ?? 'pendiente') }}</div>
+      @else
+        <div class="mb-6"><span class="label">Válido Hasta:</span> {{ $validUntil }}</div>
+      @endif
       <div class="mb-6"><span class="label">Factura No.:</span> {{ $invoiceNo }}</div>
       <div class="mb-6">
   <span class="label">Fecha:</span> 
@@ -224,6 +228,25 @@
 
     <div class="clearfix"></div>
   </div>
+
+  {{-- Representación fiscal e-CF (obligatoria para comprobantes electrónicos DGII) --}}
+  @if ($invoice->kontab_invoice_id && $invoice->kontab_dgii_status === 'accepted')
+    <div style="border-top:2px solid #2563eb; margin-top:24px; padding-top:12px;">
+      @if ($invoice->kontab_qr_svg)
+        <img src="{{ $invoice->kontab_qr_svg }}" style="width:130px; height:130px;" alt="QR e-CF" /><br>
+      @endif
+      @if ($invoice->kontab_security_code)
+        <div style="color:#2563eb; font-size:11px; margin-top:4px;">
+          <strong>Código de Seguridad:</strong> {{ $invoice->kontab_security_code }}
+        </div>
+      @endif
+      @if ($invoice->kontab_fecha_firma)
+        <div style="color:#2563eb; font-size:11px;">
+          <strong>Fecha Firma:</strong> {{ $invoice->kontab_fecha_firma }}
+        </div>
+      @endif
+    </div>
+  @endif
 
   {{-- Firmas --}}
   <div class="signature-row">

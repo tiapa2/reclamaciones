@@ -433,6 +433,12 @@ class InvoiceController extends Controller
     {
         $invoice->load(['doctor', 'insurer', 'ncfType', 'items']);
 
+        // e-CF aceptado sin QR guardado (facturas previas al feature): traerlo ahora.
+        if ($invoice->kontab_invoice_id && $invoice->kontab_dgii_status === 'accepted' && ! $invoice->kontab_qr_svg) {
+            $invoice->syncKontabFiscalData();
+            $invoice->refresh()->load(['doctor', 'insurer', 'ncfType', 'items']);
+        }
+
         $pdf = Pdf::loadView('invoices.pdf', compact('invoice'))
             ->setPaper('letter'); // o 'a4'
 

@@ -65,6 +65,12 @@ class KontabWebhookController extends Controller
             'kontab_ncf' => $data['ncf'] ?? $invoice->kontab_ncf,
         ]);
 
+        // Al aceptar, traer la representación fiscal (QR, código seguridad, fecha
+        // firma) para el PDF. El webhook no la incluye; se consulta a kontab.
+        if ($newStatus === 'accepted') {
+            $invoice->refresh()->loadMissing('doctor')->syncKontabFiscalData();
+        }
+
         Log::info('Kontab webhook procesado', [
             'event' => $event,
             'invoice_id' => $invoice->id,

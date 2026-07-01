@@ -122,10 +122,18 @@
                         <div class="text-xl font-bold text-sky-500">Factura Crédito Fiscal</div>
 
                         <div class="mt-2 text-sm text-gray-800 dark:text-gray-200 space-y-1">
-                            <div><span class="font-semibold">NCF:</span> {{ $invoice->ncf_number }}</div>
+                            <div><span class="font-semibold">NCF:</span> {{ $invoice->kontab_ncf ?? $invoice->ncf_number ?: '-' }}</div>
 
-                            {{-- Si no tienes relación ncfAuthorization, deja esto como '-' o quítalo --}}
-                            <div><span class="font-semibold">Válido Hasta:</span> -</div>
+                            @if ($invoice->kontab_invoice_id)
+                                <div><span class="font-semibold">DGII:</span>
+                                    <span class="uppercase">{{ $invoice->kontab_dgii_status ?? 'pendiente' }}</span>
+                                </div>
+                                @if ($invoice->kontab_security_code)
+                                    <div><span class="font-semibold">Código Seguridad:</span> {{ $invoice->kontab_security_code }}</div>
+                                @endif
+                            @else
+                                <div><span class="font-semibold">Válido Hasta:</span> -</div>
+                            @endif
 
                             <div><span class="font-semibold">Factura No.:</span> {{ $invoiceNo }}</div>
                             <div><span class="font-semibold">Fecha:</span>
@@ -147,16 +155,25 @@
                     </div>
                 </div>
 
+                {{-- Aviso de bloqueo: factura electrónica ya emitida a kontab/DGII --}}
+                @if ($invoice->isLocked())
+                    <div class="mt-6 rounded-lg border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-900/20 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
+                        🔒 Comprobante electrónico emitido (e-NCF {{ $invoice->kontab_ncf ?? '' }}). No se puede editar ni agregar líneas. Para corregir, anula y emite una nota de crédito.
+                    </div>
+                @endif
+
                 {{-- Tabla items --}}
                 @hasanyrole('admin|analista')
-                <div class="mt-6 flex justify-end">
-                    <button type="button"
-                        class="rounded-lg bg-indigo-600 px-3 py-2 text-white text-sm font-medium hover:bg-indigo-700"
-                        @click="showAddForm = !showAddForm">
-                        <span x-show="!showAddForm">+ Agregar línea</span>
-                        <span x-show="showAddForm">— Cancelar</span>
-                    </button>
-                </div>
+                    @unless ($invoice->isLocked())
+                        <div class="mt-6 flex justify-end">
+                            <button type="button"
+                                class="rounded-lg bg-indigo-600 px-3 py-2 text-white text-sm font-medium hover:bg-indigo-700"
+                                @click="showAddForm = !showAddForm">
+                                <span x-show="!showAddForm">+ Agregar línea</span>
+                                <span x-show="showAddForm">— Cancelar</span>
+                            </button>
+                        </div>
+                    @endunless
                 @endhasanyrole
 
                 <div class="mt-2 overflow-x-auto">
@@ -170,7 +187,9 @@
                                 <th class="px-4 py-3 text-left" x-show="invoiceType === 'clinica'">DESCRIPCIÓN</th>
                                 <th class="px-4 py-3 text-right">COBERTURA</th>
                                 @hasanyrole('admin|analista')
-                                    <th class="px-4 py-3 text-right">ACCIONES</th>
+                                    @unless ($invoice->isLocked())
+                                        <th class="px-4 py-3 text-right">ACCIONES</th>
+                                    @endunless
                                 @endhasanyrole
                             </tr>
                         </thead>
@@ -258,8 +277,9 @@
                                         </template>
                                     </td>
 
-                                    {{-- Acciones --}}
+                                    {{-- Acciones (ocultas si la factura está bloqueada por e-CF) --}}
                                     @hasanyrole('admin|analista')
+                                        @unless ($invoice->isLocked())
                                         <td class="px-4 py-3 text-right space-x-2">
                                             <template x-if="!it._edit">
                                                 <span class="inline-flex gap-2">
@@ -293,6 +313,7 @@
                                                 </button>
                                             </template>
                                         </td>
+                                        @endunless
                                     @endhasanyrole
                                 </tr>
                             </template>

@@ -11,25 +11,27 @@ class InvoiceItemController extends Controller
 {
     public function store(Request $request, Invoice $invoice)
     {
+        abort_if($invoice->isLocked(), 403, 'Factura electrónica ya emitida: no se pueden agregar líneas.');
+
         $isArs = ($invoice->invoice_type ?? 'ars') === 'ars';
 
         if ($isArs) {
             $data = $request->validate([
-                'service_date'     => ['required', 'date'],
-                'patient_name'     => ['required', 'string', 'max:255'],
-                'affiliate_no'     => ['nullable', 'string', 'max:100'],
+                'service_date' => ['required', 'date'],
+                'patient_name' => ['required', 'string', 'max:255'],
+                'affiliate_no' => ['nullable', 'string', 'max:100'],
                 'authorization_no' => ['nullable', 'string', 'max:100'],
-                'amount'           => ['required', 'numeric', 'min:0.01'],
+                'amount' => ['required', 'numeric', 'min:0.01'],
             ]);
             $data['description'] = null;
         } else {
             $data = $request->validate([
                 'service_date' => ['required', 'date'],
-                'description'  => ['required', 'string', 'max:500'],
-                'amount'       => ['required', 'numeric', 'min:0.01'],
+                'description' => ['required', 'string', 'max:500'],
+                'amount' => ['required', 'numeric', 'min:0.01'],
             ]);
-            $data['patient_name']     = null;
-            $data['affiliate_no']     = null;
+            $data['patient_name'] = null;
+            $data['affiliate_no'] = null;
             $data['authorization_no'] = null;
         }
 
@@ -43,17 +45,17 @@ class InvoiceItemController extends Controller
         });
 
         return response()->json([
-            'ok'        => true,
+            'ok' => true,
             'new_total' => (float) $invoice->total_amount,
-            'item'      => [
-                'id'               => $item->id,
-                'service_date'     => optional($item->service_date)->toDateString(),
-                'description'      => $item->description,
-                'patient_name'     => $item->patient_name,
-                'affiliate_no'     => $item->affiliate_no,
+            'item' => [
+                'id' => $item->id,
+                'service_date' => optional($item->service_date)->toDateString(),
+                'description' => $item->description,
+                'patient_name' => $item->patient_name,
+                'affiliate_no' => $item->affiliate_no,
                 'authorization_no' => $item->authorization_no,
-                'amount'           => (float) $item->amount,
-                '_edit'            => false,
+                'amount' => (float) $item->amount,
+                '_edit' => false,
             ],
         ]);
     }
@@ -61,25 +63,27 @@ class InvoiceItemController extends Controller
     public function update(Request $request, InvoiceItem $item)
     {
         $invoice = $item->invoice;
+        abort_if($invoice->isLocked(), 403, 'Factura electrónica ya emitida: no se puede editar.');
+
         $isArs = ($invoice->invoice_type ?? 'ars') === 'ars';
 
         if ($isArs) {
             $data = $request->validate([
-                'service_date'     => ['required', 'date'],
-                'patient_name'     => ['required', 'string', 'max:255'],
-                'affiliate_no'     => ['nullable', 'string', 'max:100'],
+                'service_date' => ['required', 'date'],
+                'patient_name' => ['required', 'string', 'max:255'],
+                'affiliate_no' => ['nullable', 'string', 'max:100'],
                 'authorization_no' => ['nullable', 'string', 'max:100'],
-                'amount'           => ['required', 'numeric', 'min:0.01'],
+                'amount' => ['required', 'numeric', 'min:0.01'],
             ]);
             $data['description'] = null;
         } else {
             $data = $request->validate([
                 'service_date' => ['required', 'date'],
-                'description'  => ['required', 'string', 'max:500'],
-                'amount'       => ['required', 'numeric', 'min:0.01'],
+                'description' => ['required', 'string', 'max:500'],
+                'amount' => ['required', 'numeric', 'min:0.01'],
             ]);
-            $data['patient_name']     = null;
-            $data['affiliate_no']     = null;
+            $data['patient_name'] = null;
+            $data['affiliate_no'] = null;
             $data['authorization_no'] = null;
         }
 
@@ -99,6 +103,7 @@ class InvoiceItemController extends Controller
 
         DB::transaction(function () use ($item, &$newTotal) {
             $invoice = $item->invoice()->lockForUpdate()->first();
+            abort_if($invoice->isLocked(), 403, 'Factura electrónica ya emitida: no se puede eliminar líneas.');
 
             $item->delete();
 

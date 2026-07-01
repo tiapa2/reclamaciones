@@ -173,6 +173,29 @@ class KontabClient
     private ?array $ncfTypeCache = null;
 
     /**
+     * Estado + representación fiscal del e-CF en kontab-erp (para el PDF):
+     * ncf, status, security_code, qr_url, qr_svg_base64, fecha_firma.
+     *
+     * @return array{ncf:?string,status:?string,security_code:?string,qr_url:?string,qr_svg_base64:?string,fecha_firma:?string}
+     */
+    public function getDgiiStatus(int $kontabInvoiceId): array
+    {
+        $res = $this->request('GET', "/invoices/sales/{$kontabInvoiceId}/dgii-status");
+        $this->throwIfFailed($res, 'consultar estado DGII');
+
+        $d = $res->json('data') ?? $res->json() ?? [];
+
+        return [
+            'ncf' => $d['ncf'] ?? null,
+            'status' => $d['status'] ?? null,
+            'security_code' => $d['security_code'] ?? null,
+            'qr_url' => $d['qr_url'] ?? null,
+            'qr_svg_base64' => $d['qr_svg_base64'] ?? null,
+            'fecha_firma' => $d['fecha_firma'] ?? null,
+        ];
+    }
+
+    /**
      * Tipos de comprobante ELECTRÓNICO (e-CF) que la empresa tiene disponibles en
      * kontab-erp: solo secuencias activas, con números restantes y código E-* .
      * Se usa para poblar el selector de "Tipo NCF" cuando el médico es electrónico.
