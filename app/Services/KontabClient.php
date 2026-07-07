@@ -109,6 +109,12 @@ class KontabClient
             throw new RuntimeException("kontab-erp no tiene configurado el tipo de NCF «{$ncfCode}» para esta empresa.");
         }
 
+        // Retención de ISR (honorarios). Kontab-erp la recibe a nivel encabezado
+        // (withholding_isr) y la prorratea por línea al emitir el e-CF. Cuando hay
+        // retención, cada línea debe marcar el indicador de agente de retención.
+        $isrRetention = (float) ($invoice->isr_retention_amount ?? 0);
+        $hasRetention = $isrRetention > 0;
+
         $payload = [
             'contact_id' => $kontabContactId,
             'ncf_type_id' => $kontabNcfTypeId,
@@ -117,13 +123,15 @@ class KontabClient
             'auto_post' => true,
             'auto_send_dgii' => true,
             'reference' => "Factura {$invoice->id}",
-            'items' => $invoice->items->map(fn ($it) => [
+            'withholding_isr' => $isrRetention,
+            'items' => $invoice->items->map(fn ($it) => array_filter([
                 'description' => $it->description
                     ?? ($it->patient_name ? "Servicio médico — {$it->patient_name}" : 'Servicio médico'),
                 'quantity' => 1,
                 'unit_price' => (float) $it->amount,
                 'tax_rate' => 0, // ARS = exento; ajustar si alguna cae bajo ITBIS
-            ])->all(),
+                'retention_agent_indicator' => $hasRetention ? 1 : null,
+            ], fn ($v) => $v !== null))->all(),
             'notes' => $this->buildInvoiceNotes($invoice),
         ];
 

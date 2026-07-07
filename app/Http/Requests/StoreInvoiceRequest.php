@@ -16,28 +16,31 @@ class StoreInvoiceRequest extends FormRequest
         $isArs = $this->input('invoice_type', 'ars') === 'ars';
 
         return [
-            'doctor_id'    => ['required', 'integer', 'exists:doctors,id'],
-            'insurer_id'   => ['required', 'integer', 'exists:insurers,id'],
-            'ncf_type_id'  => ['required', 'integer', 'exists:ncf_types,id'],
+            'doctor_id' => ['required', 'integer', 'exists:doctors,id'],
+            'insurer_id' => ['required', 'integer', 'exists:insurers,id'],
+            'ncf_type_id' => ['required', 'integer', 'exists:ncf_types,id'],
             'invoice_date' => ['required', 'date'],
             'invoice_type' => ['required', 'in:ars,clinica'],
 
-            'items'                    => ['required', 'array', 'min:1'],
-            'items.*.service_date'     => ['required', 'date'],
-            'items.*.amount'           => ['required', 'numeric', 'min:0.01'],
+            // Retención de ISR (honorarios) — % opcional; 0 o vacío = sin retención.
+            'isr_retention_pct' => ['nullable', 'numeric', 'min:0', 'max:100'],
+
+            'items' => ['required', 'array', 'min:1'],
+            'items.*.service_date' => ['required', 'date'],
+            'items.*.amount' => ['required', 'numeric', 'min:0.01'],
 
             // Campos ARS
-            'items.*.patient_name'     => $isArs
+            'items.*.patient_name' => $isArs
                 ? ['required', 'string', 'max:255']
                 : ['nullable', 'string', 'max:255'],
-            'items.*.affiliate_no'     => ['nullable', 'string', 'max:100'],
+            'items.*.affiliate_no' => ['nullable', 'string', 'max:100'],
             'items.*.authorization_no' => $isArs
                 ? ['required', 'string', 'max:100']
                 : ['nullable', 'string', 'max:100'],
-            'items.*.procedure_id'     => ['nullable', 'integer'],
+            'items.*.procedure_id' => ['nullable', 'integer'],
 
             // Campo clínica
-            'items.*.description'      => $isArs
+            'items.*.description' => $isArs
                 ? ['nullable', 'string', 'max:500']
                 : ['required', 'string', 'max:500'],
         ];
@@ -46,11 +49,11 @@ class StoreInvoiceRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'items.required'                    => 'Debes agregar al menos un registro.',
-            'items.min'                         => 'Debes agregar al menos un registro.',
-            'items.*.patient_name.required'     => 'El nombre del paciente es obligatorio.',
+            'items.required' => 'Debes agregar al menos un registro.',
+            'items.min' => 'Debes agregar al menos un registro.',
+            'items.*.patient_name.required' => 'El nombre del paciente es obligatorio.',
             'items.*.authorization_no.required' => 'El número de autorización es obligatorio.',
-            'items.*.description.required'      => 'La descripción es obligatoria.',
+            'items.*.description.required' => 'La descripción es obligatoria.',
         ];
     }
 }

@@ -14,6 +14,8 @@ class Invoice extends Model
         'ncf_number',
         'ncf_seq',
         'total_amount',
+        'isr_retention_pct',
+        'isr_retention_amount',
         'invoice_type',
         'status',
         'created_by',
@@ -37,6 +39,8 @@ class Invoice extends Model
     protected $casts = [
         'invoice_date' => 'date',
         'total_amount' => 'decimal:2',
+        'isr_retention_pct' => 'decimal:2',
+        'isr_retention_amount' => 'decimal:2',
         'kontab_dgii_response_at' => 'datetime',
         'kontab_dgii_response' => 'array',
     ];
@@ -49,6 +53,12 @@ class Invoice extends Model
     {
         return $this->kontab_invoice_id !== null
             && $this->kontab_dgii_status !== 'rejected';
+    }
+
+    /** Neto a recibir por el médico tras la retención de ISR. */
+    public function netAmount(): float
+    {
+        return (float) $this->total_amount - (float) $this->isr_retention_amount;
     }
 
     /**

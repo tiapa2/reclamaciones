@@ -220,6 +220,16 @@
     <div class="totals-right">
       Total Facturado por {{ $invoice->insurer?->name }}:
       <span class="big-amount-right">${{ number_format((float)$invoice->total_amount, 2) }}</span>
+      @if ((float) $invoice->isr_retention_amount > 0)
+        <div style="margin-top:6px; font-size:12px;">
+          Retención ISR ({{ rtrim(rtrim(number_format((float)$invoice->isr_retention_pct, 2), '0'), '.') }}%):
+          <span style="float:right;">- ${{ number_format((float)$invoice->isr_retention_amount, 2) }}</span>
+        </div>
+        <div style="margin-top:4px; font-weight:bold;">
+          Neto a recibir:
+          <span style="float:right;">${{ number_format($invoice->netAmount(), 2) }}</span>
+        </div>
+      @endif
     </div>
 
     <div class="clearfix"></div>

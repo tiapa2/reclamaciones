@@ -184,8 +184,28 @@
                         </div>
 
                         <div class="mt-4 flex justify-end">
-                            <div class="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                                Total: <span x-text="formatMoney(total())"></span>
+                            <div class="w-full max-w-xs space-y-2">
+                                <div class="flex items-center justify-between gap-4">
+                                    <span class="text-sm text-gray-600 dark:text-gray-300">Total servicios</span>
+                                    <span class="font-semibold text-gray-900 dark:text-gray-100"
+                                        x-text="formatMoney(total())"></span>
+                                </div>
+                                <div class="flex items-center justify-between gap-4">
+                                    <label class="text-sm text-gray-600 dark:text-gray-300">Retención ISR (%)</label>
+                                    <input type="number" step="0.01" min="0" max="100" name="isr_retention_pct"
+                                        x-model="form.isr_retention_pct" placeholder="0"
+                                        class="w-24 rounded-lg border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 text-right">
+                                </div>
+                                <div class="flex items-center justify-between gap-4" x-show="isrAmount() > 0">
+                                    <span class="text-sm text-amber-600 dark:text-amber-400">Retención ISR</span>
+                                    <span class="text-amber-600 dark:text-amber-400 font-medium"
+                                        x-text="'- ' + formatMoney(isrAmount())"></span>
+                                </div>
+                                <div class="flex items-center justify-between gap-4 border-t border-gray-200 dark:border-gray-700 pt-2">
+                                    <span class="text-base font-semibold text-gray-900 dark:text-gray-100">Neto a recibir</span>
+                                    <span class="text-lg font-bold text-gray-900 dark:text-gray-100"
+                                        x-text="formatMoney(netTotal())"></span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -320,6 +340,7 @@
                     ncf_type_id: '',
                     invoice_date: new Date().toISOString().slice(0, 10),
                     invoice_type: 'ars',
+                    isr_retention_pct: '',
                     items: [{
                         service_date: '',
                         description: '',
@@ -398,6 +419,15 @@
 
                 total() {
                     return this.form.items.reduce((sum, r) => sum + (parseFloat(r.amount || 0) || 0), 0);
+                },
+
+                isrAmount() {
+                    const pct = parseFloat(this.form.isr_retention_pct || 0) || 0;
+                    return Math.round(this.total() * pct) / 100;
+                },
+
+                netTotal() {
+                    return this.total() - this.isrAmount();
                 },
 
                 formatMoney(n) {

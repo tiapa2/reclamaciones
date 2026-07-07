@@ -118,6 +118,51 @@ it('envía a kontab-erp cuando el doctor tiene facturación electrónica y bloqu
         ->assertStatus(403);
 });
 
+it('captura la retención de ISR y la envía a kontab-erp', function () {
+    Http::fake([
+        'kontab.test/api/integration/v1/contacts' => Http::response(['id' => 556], 201),
+        'kontab.test/api/integration/v1/lookups/ncf-types' => Http::response([
+            'data' => [['id' => 42, 'code' => 'E31', 'name' => 'Crédito Fiscal Electrónico']],
+        ], 200),
+        'kontab.test/api/integration/v1/invoices/sales' => Http::response([
+            'id' => 8888, 'ncf' => 'E310000000200', 'track_id' => 'TRK', 'security_code' => 'SEC', 'dgii_status' => 'pending',
+        ], 201),
+    ]);
+
+    $admin = User::factory()->create();
+    $admin->assignRole('admin');
+
+    $doctor = Doctor::create([
+        'rnc' => '353535353', 'full_name' => 'Dr Retención', 'email' => 'ret@test.com',
+        'e_invoicing_enabled' => true, 'kontab_api_key_id' => 'kt_key',
+        'kontab_api_secret_encrypted' => Crypt::encryptString('sk_secret'),
+    ]);
+    $insurer = Insurer::create(['name' => 'ARS R', 'rnc' => '454545454']);
+    $ncfType = NcfType::create(['name' => 'E31', 'prefix' => 'E31', 'active' => true]);
+
+    $this->actingAs($admin)->post('/invoices', [
+        'doctor_id' => $doctor->id,
+        'insurer_id' => $insurer->id,
+        'ncf_type_id' => $ncfType->id,
+        'invoice_date' => now()->toDateString(),
+        'invoice_type' => 'ars',
+        'isr_retention_pct' => 10,
+        'items' => [['service_date' => now()->toDateString(), 'patient_name' => 'Ana', 'authorization_no' => 'A', 'amount' => 38888.89]],
+    ]);
+
+    $invoice = Invoice::latest()->first();
+    expect((float) $invoice->isr_retention_pct)->toBe(10.0);
+    expect((float) $invoice->isr_retention_amount)->toBe(3888.89);
+    expect($invoice->netAmount())->toBe(35000.0);
+
+    // El payload a kontab lleva la retención en el encabezado y marca el indicador por línea.
+    Http::assertSent(function ($request) {
+        return str_ends_with($request->url(), '/invoices/sales')
+            && (float) $request['withholding_isr'] === 3888.89
+            && ($request['items'][0]['retention_agent_indicator'] ?? null) === 1;
+    });
+});
+
 it('webhook DGII accepted actualiza el status', function () {
     config(['app.cipher' => 'aes-256-cbc']);
     config(['services.kontab.webhook_secret' => 'test-webhook-secret']);

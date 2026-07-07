@@ -89,6 +89,10 @@ class InvoiceController extends Controller
 
             $total = collect($data['items'])->sum(fn ($it) => (float) $it['amount']);
 
+            // Retención de ISR: monto = tasa × total (servicios exentos, sin ITBIS).
+            $isrPct = (float) ($data['isr_retention_pct'] ?? 0);
+            $isrAmount = round($total * $isrPct / 100, 2);
+
             // 1) Crear invoice (con NCF local si aplica, sin si va a kontab)
             $invoice = Invoice::create([
                 'doctor_id' => $data['doctor_id'],
@@ -99,6 +103,8 @@ class InvoiceController extends Controller
                 'ncf_seq' => $ncfSeq,
                 'ncf_number' => $ncfNumber,
                 'total_amount' => $total,
+                'isr_retention_pct' => $isrPct > 0 ? $isrPct : null,
+                'isr_retention_amount' => $isrAmount,
                 'status' => 'issued',
                 'created_by' => auth()->id(),
             ]);

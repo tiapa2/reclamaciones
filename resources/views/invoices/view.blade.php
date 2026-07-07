@@ -379,6 +379,15 @@
                     <div class="text-right text-lg font-semibold text-gray-900 dark:text-gray-100">
                         Total Facturado por <span x-text="insurerName"></span>:
                         <span class="ml-3 text-3xl font-bold" x-text="`$${formatMoneyRaw(total())}`"></span>
+                        @if ((float) $invoice->isr_retention_amount > 0)
+                            <div class="mt-2 text-sm font-medium text-amber-600 dark:text-amber-400">
+                                Retención ISR ({{ rtrim(rtrim(number_format((float) $invoice->isr_retention_pct, 2), '0'), '.') }}%):
+                                <span class="ml-2">- ${{ number_format((float) $invoice->isr_retention_amount, 2) }}</span>
+                            </div>
+                            <div class="mt-1 text-base font-bold text-gray-900 dark:text-gray-100">
+                                Neto a recibir: <span class="ml-2">${{ number_format($invoice->netAmount(), 2) }}</span>
+                            </div>
+                        @endif
                     </div>
                 </div>
 
