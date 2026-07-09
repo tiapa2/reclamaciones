@@ -32,3 +32,8 @@ public/.user.ini
 # Backups locales
 *.bak
 *.predeploy.bak
+
+# Artefactos macOS (zip/USB) — no deben estar en el repo
+__MACOSX/
+._*
+.DS_Store
