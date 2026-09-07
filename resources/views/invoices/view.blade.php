@@ -125,7 +125,7 @@
                             <div><span class="font-semibold">NCF:</span> {{ $invoice->kontab_ncf ?? $invoice->ncf_number ?: '-' }}</div>
 
                             <div><span class="font-semibold">Válido Hasta:</span>
-                                {{ $invoice->kontab_valid_until ?? '-' }}</div>
+                                {{ $invoice->validUntil() ?: '-' }}</div>
                             @if ($invoice->kontab_invoice_id && $invoice->kontab_security_code)
                                 <div><span class="font-semibold">Código Seguridad:</span> {{ $invoice->kontab_security_code }}</div>
                             @endif

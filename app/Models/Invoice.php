@@ -55,6 +55,53 @@ class Invoice extends Model
             && $this->kontab_dgii_status !== 'rejected';
     }
 
+    /**
+     * "Válido Hasta" del comprobante: vencimiento de la secuencia NCF.
+     *
+     * e-CF: lo manda kontab-erp en kontab_valid_until. NCF físico: sale de la
+     * autorización del médico. Se busca primero la que cubre ese número exacto,
+     * para que una factura vieja no muestre la fecha de una autorización
+     * renovada después; si no hay rango que la cubra, se usa la activa.
+     */
+    public function validUntil(): ?string
+    {
+        if ($this->kontab_valid_until) {
+            return $this->formatDgiiDate($this->kontab_valid_until);
+        }
+
+        if (! $this->ncf_type_id) {
+            return null;
+        }
+
+        $base = DoctorNcfAuthorization::where('doctor_id', $this->doctor_id)
+            ->where('ncf_type_id', $this->ncf_type_id);
+
+        // Las autorizaciones son únicas por (médico, aseguradora, tipo), así que
+        // el rango identifica de cuál salió este NCF.
+        $auth = null;
+        if ($this->ncf_seq) {
+            $auth = (clone $base)
+                ->where('from_number', '<=', $this->ncf_seq)
+                ->where('to_number', '>=', $this->ncf_seq)
+                ->orderByDesc('expires_at')
+                ->first();
+        }
+        $auth ??= (clone $base)->where('insurer_id', $this->insurer_id)->first();
+        $auth ??= (clone $base)->where('active', true)->orderByDesc('expires_at')->first();
+
+        return $auth?->expires_at?->format('d/m/Y');
+    }
+
+    /** Acepta '2028-12-31' o ya formateada; nunca revienta el PDF. */
+    protected function formatDgiiDate(string $value): string
+    {
+        try {
+            return \Carbon\Carbon::parse($value)->format('d/m/Y');
+        } catch (\Throwable) {
+            return $value;
+        }
+    }
+
     /** Neto a recibir por el médico tras la retención de ISR. */
     public function netAmount(): float
     {

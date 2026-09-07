@@ -130,7 +130,8 @@
 
 @php
   $invoiceNo = 'FT' . str_pad((string)$invoice->id, 8, '0', STR_PAD_LEFT);
-  $validUntil = '-'; // si no tienes expires_at, déjalo así
+  // e-CF: lo manda kontab-erp; NCF físico: la autorización del médico.
+  $validUntil = $invoice->validUntil() ?: '-';
 @endphp
 
   {{-- Header (2 columnas) --}}
@@ -153,7 +154,7 @@
       <div class="doc-title">Factura Crédito Fiscal</div>
 
       <div class="mb-6"><span class="label">NCF:</span> {{ $invoice->kontab_ncf ?? $invoice->ncf_number ?: '-' }}</div>
-      <div class="mb-6"><span class="label">Válido Hasta:</span> {{ $invoice->kontab_valid_until ?? $validUntil }}</div>
+      <div class="mb-6"><span class="label">Válido Hasta:</span> {{ $validUntil }}</div>
       <div class="mb-6"><span class="label">Factura No.:</span> {{ $invoiceNo }}</div>
       <div class="mb-6">
   <span class="label">Fecha:</span> 
